@@ -73,4 +73,4 @@ Sbi_init.c中的sbi_init函数进行初始化OpenSBI库以准备当前的HART，
 ![device](src/lab0.5_device.png)
 
 
-
+## 知识点分析
