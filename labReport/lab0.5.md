@@ -49,7 +49,7 @@ a1通常是用于参数传递的寄存器，将它的值赋值为t0的值加上3
 - 0x1008 csrr a0,mhartid
 control and status register read，a0用于参数传递，从mhartid寄存器中读取值，该寄存器包含了当前Hart(硬件线程)的ID，进一步使用命令info r mhartid查看它的值，结果为0
 - 0x100c 1d,t0,24(t0)
-load doubleword，这个数据的地址是t0+24 = 4096+24= 0x1080，这里储存的数据可以从上面的代码段读出，为0x80000000  
+load doubleword，这个数据的地址是t0+24 = 4096+24= 0x1018，这里储存的数据可以从上面的代码段读出，为0x80000000  
 查询源码，发现这就是memmap[VIRT_DRAM].base的值
 - 0x1010 jr,t0
 跳转到t0寄存器中保存的地址，也就是刚刚取出的0x80000000，继续执行指令
