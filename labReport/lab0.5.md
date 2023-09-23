@@ -37,7 +37,7 @@ uint32_t reset_vec[8] = {
 ```
 
 代码详细解释如下：  
-- auipc t,0x9	# add upper immediate to pc  
+- auipc t0,0x0	# add upper immediate to pc  
 将一个20位的立即数加上PC寄存器的值，并将结果存储到目标寄存器中  
 在RISC-V中，全局变量的地址是由PC寄存器和偏移量组成的。偏移量通常是一个20位的立即数，而PC寄存器则指向当前指令的地址  
 使用AUIPC指令将偏移量加到PC寄存器的高20位上，从而得到全局变量的地址，为后面的ld t0,24(t0)加载变量作准备  
