@@ -68,20 +68,20 @@ static void
 default_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
     struct Page *p = base;
-    for (; p != base + n; p ++) {
+    for (; p != base + n; p ++) { // 初始化每一页
         assert(PageReserved(p));
         p->flags = p->property = 0;
         set_page_ref(p, 0);
     }
-    base->property = n;
+    base->property = n; // base是空闲块的第一页，property记录了空闲块的大小
     SetPageProperty(base);
     nr_free += n;
-    if (list_empty(&free_list)) {
+    if (list_empty(&free_list)) { // freelist只加了base
         list_add(&free_list, &(base->page_link));
-    } else {
-        list_entry_t* le = &free_list;
+    } else { // freelist不为空，找到合适的位置插入
+        list_entry_t* le = &free_list; // 从头开始遍历
         while ((le = list_next(le)) != &free_list) {
-            struct Page* page = le2page(le, page_link);
+            struct Page* page = le2page(le, page_link); // le2page是一个宏，用来把list_entry转换成Page
             if (base < page) {
                 list_add_before(le, &(base->page_link));
                 break;
@@ -100,23 +100,24 @@ default_alloc_pages(size_t n) {
     }
     struct Page *page = NULL;
     list_entry_t *le = &free_list;
-    while ((le = list_next(le)) != &free_list) {
+    while ((le = list_next(le)) != &free_list) { // 遍历freelist，找到第一个空闲块
         struct Page *p = le2page(le, page_link);
         if (p->property >= n) {
             page = p;
             break;
         }
     }
+    // 如果找到了合适的空闲块，就从空闲块中分配出需要的页
     if (page != NULL) {
         list_entry_t* prev = list_prev(&(page->page_link));
         list_del(&(page->page_link));
-        if (page->property > n) {
-            struct Page *p = page + n;
-            p->property = page->property - n;
+        if (page->property > n) { // page往后的n个都会被分配出去，剩下的空闲块还可以继续使用
+            struct Page *p = page + n; // page覆盖n个，中间n个是没有串入freelist的
+            p->property = page->property - n; // the rest of this free block
             SetPageProperty(p);
-            list_add(prev, &(p->page_link));
+            list_add(prev, &(p->page_link)); // 把剩下的空闲块头（覆盖后面若干个）串入freelist
         }
-        nr_free -= n;
+        nr_free -= n; // 总的空闲块数减少
         ClearPageProperty(page);
     }
     return page;
@@ -126,7 +127,7 @@ static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
     struct Page *p = base;
-    for (; p != base + n; p ++) {
+    for (; p != base + n; p ++) { // 释放每一页
         assert(!PageReserved(p) && !PageProperty(p));
         p->flags = 0;
         set_page_ref(p, 0);
@@ -135,9 +136,9 @@ default_free_pages(struct Page *base, size_t n) {
     SetPageProperty(base);
     nr_free += n;
 
-    if (list_empty(&free_list)) {
+    if (list_empty(&free_list)) { // freelist为空，直接加入
         list_add(&free_list, &(base->page_link));
-    } else {
+    } else { // freelist不为空，找到合适的位置插入
         list_entry_t* le = &free_list;
         while ((le = list_next(le)) != &free_list) {
             struct Page* page = le2page(le, page_link);
@@ -150,14 +151,16 @@ default_free_pages(struct Page *base, size_t n) {
         }
     }
 
+    // page是struct从来都是致密排列没动过，freelist连接的是pagelink
+    // 合并相邻的空闲块
     list_entry_t* le = list_prev(&(base->page_link));
     if (le != &free_list) {
         p = le2page(le, page_link);
-        if (p + p->property == base) {
+        if (p + p->property == base) { // 刚好相邻
             p->property += base->property;
             ClearPageProperty(base);
-            list_del(&(base->page_link));
-            base = p;
+            list_del(&(base->page_link)); // 从freelist中删除
+            base = p; // 合并后的空闲块头
         }
     }
 
