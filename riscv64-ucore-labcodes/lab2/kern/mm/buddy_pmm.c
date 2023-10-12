@@ -176,7 +176,7 @@ buddy2_free(struct buddy2* self, int offset){
     unsigned node_size, index;
     unsigned left_longest, right_longest;
 
-    //实际的双链表信息复原后，还要对“二叉树”里面的节点信息进行更新
+    // 实际的双链表信息复原后，还要对“二叉树”里面的节点信息进行更新
     node_size = 1;
     index = offset + self->size - 1;   //从原始的分配节点的最底节点开始改变longest
     self[index].longest = node_size;   //这里应该是node_size，也就是从1那层开始改变
@@ -195,14 +195,14 @@ buddy2_free(struct buddy2* self, int offset){
 
 static void
 buddy_free_pages(struct Page *base, size_t n) {
+    assert(n>0);
+    n = base->property; // 从property中拿到空闲块的大小
+
     struct buddy2* self=root;
     list_entry_t *le=&free_list;
     struct Page *base_page = le2page(list_next(le), page_link); // 拿到page头
     unsigned int offset= base - base_page; // 释放块的偏移量
     cprintf("free page offset %d\n),",offset);
-
-    if(!IS_POWER_OF_2(n))
-        n=fixsize(n);
     assert(self&&offset >= 0&&offset < self->size); // 是否合法
     
     struct Page *p = base;
@@ -211,7 +211,7 @@ buddy_free_pages(struct Page *base, size_t n) {
         //     cprintf("free page %d\n",p-base); // test
         //assert(!PageReserved(p)&&!PageProperty(p)); // flag位对算法来说没用，root里已经有了；维护成本还高
         assert(!PageReserved(p));
-        p->flags = 0;
+        //p->flags = 0;
         set_page_ref(p, 0);
     }
     base->property = 0; // 当前页不再管辖任何空闲块
