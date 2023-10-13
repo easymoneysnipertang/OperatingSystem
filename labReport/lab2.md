@@ -91,8 +91,8 @@ default_init_memmap(struct Page *base, size_t n) {
 }
 ```
 
-遍历base以及n所确定的Page检查页面是否被内核reserved，如果reserved说明该页面是可用的，否则说明以及分初始化了，或者是非法页。  
-接下来，将块内各个页的flags置为0以标记物理页帧有效，property成员置零。使用SetPageProperty宏置PG_Property标志位来标记空闲块首页，将首页property置为块内总页数，然后将全局总页数nr_free加上块内总页数，并用page_link这个双链表结点指针集合将块首页连接到空闲块链表里。  
+遍历base以及n所确定的Page检查页面是否被内核reserved，如果reserved说明该页面是可用的，否则说明以及分初始化了，或者是非法页。接下来，将块内各个页的flags置为0以标记物理页帧有效，property成员置零。  
+然后使用SetPageProperty宏置PG_Property标志位来标记空闲块首页，将首页property置为块内总页数，然后将全局总页数nr_free加上块内总页数，并用page_link这个双链表结点指针集合将块首页连接到空闲块链表里。  
 最后一步分为两种情况：如果freelist中无空闲块，就直接加入；如果有空闲块，就要考虑加入的顺序，让小地址的块排在前面。
 
 **default_alloc_pages(size_t n)：**
@@ -129,12 +129,12 @@ default_alloc_pages(size_t n) {
 }
 ```
 
-分配页的函数default_alloc_pages从起始位置开始顺序搜索空闲块链表  
-找到第一个页数不小于所申请页数n的块（p->property >= n），如果这个块所对应的页数正好等于申请的页数（p->property == n），则可直接分配；  
-如果块页数比申请的页数多（p->property > n）就要将块分裂，将找到的页分配出去，分裂出来的页链接到freelist中，分配完成后重新计算全局空闲页数；  
-若遍历整个空闲链表仍找不到足够大的块，则返回NULL表示分配失败。
+分配页的函数default_alloc_pages从起始位置开始顺序搜索空闲块链表,找到第一个页数不小于所申请页数n的块（p->property >= n）。  
+如果这个块所对应的页数正好等于申请的页数（p->property == n），则可直接分配；  
+如果块页数比申请的页数多（p->property > n）就要将块分裂，将找到的页分配出去，分裂出来的页链接到freelist中。  
+分配完成后重新计算全局空闲页数，若遍历整个空闲链表仍找不到足够大的块，则返回NULL表示分配失败。
 
-**default_free_pages(struct Page *base, size_t n)：**
+**default_free_pages(struct Page \*base, size_t n):**
 
 ```c
 static void
