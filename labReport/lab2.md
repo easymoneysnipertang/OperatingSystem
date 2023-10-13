@@ -239,12 +239,63 @@ best fit算法同first fit算法的特点相似，实现简单，但会产生很
 
 ![mhartid](src/lab2_tree.png)  
 **分配内存：**  
-寻找大小合适的内存块，找到一个刚好大于所需内存大小的2的次幂大小的空闲内存块，如果没有将更大的内存块对半分离。
+在Buddy System中整个分配器的大小就是满二叉树节点数目，即所需管理内存单元数目的2倍。一个节点对应4个字节，longest记录了节点所对应的的内存块大小。  
+
+对于内存分配，需要寻找大小合适的内存块，找到一个刚好大于所需内存大小的2的次幂大小的空闲内存块，如果没有将更大的内存块对半分离。  
+
+对于内存分配的alloc函数实现，入参是需要分配的大小，返回值是内存块索引。alloc函数首先将size调整到2的幂大小，并检查是否超过最大限度。然后进行适配搜索，深度优先遍历，当找到对应节点后，将其longest标记为0，即分离适配的块出来，并转换为内存块索引offset返回，依据二叉树排列序号，offset = (index + 1) * size - self->size，那么分配内存块就从索引offset开始往后size个单位。  
+
+最后，在函数返回之前需要回溯，因为小块内存被占用，大块就不能分配了
+
+```C
+int buddy2_alloc(int size){
+    size = fixsize(size);
+    for(node_size = self->size; node_size != size; node_size /= 2 ) {
+        if (self->longest[LEFT_LEAF(index)] >= size)
+        index = LEFT_LEAF(index);
+        else
+        index = RIGHT_LEAF(index);
+    }
+    self->longest[index] = 0;
+    offset = (index + 1) * node_size - self->size;
+    while (index) {
+        index = PARENT(index);
+        self->longest[index] =
+        MAX(self->longest[LEFT_LEAF(index)], self->longest[RIGHT_LEAF(index)]);
+    }
+    return offset;
+}
+```
 
 
 **释放内存：**  
 1. 寻找相邻的块，看其是否释放了。  
-2. 如果相邻块也释放了，合并这两个块，重复上述步骤直到遇上未释放的相邻块，或者达到最高上限（即所有内存都释放了）。  
+2. 如果相邻块也释放了，合并这两个块，重复上述步骤直到遇上未释放的相邻块，或者达到最高上限（即所有内存都释放了）。   
+
+对于在内存释放的free函数的实现，传入之前分配的内存地址索引，并确保它是有效值。之后就跟alloc做反向回溯，从最后的节点开始一直往上找到longest为0的节点，即当初分配块所适配的大小和位置。我们将longest恢复到原来满状态的值。继续向上回溯，检查是否存在合并的块，依据就是左右子树longest的值相加是否等于原空闲块满状态的大小，如果能够合并，就将父节点longest标记为相加的和。
+
+```C
+void buddy2_free( int offset) {
+  node_size = 1;
+  index = offset + self->size - 1;
+  for (; self->longest[index] ; index = PARENT(index)) {
+    node_size *= 2;
+    if (index == 0)
+      return;
+  }
+  self->longest[index] = node_size;
+  while (index) {
+    index = PARENT(index);
+    node_size *= 2;
+    left_longest = self->longest[LEFT_LEAF(index)];
+    right_longest = self->longest[RIGHT_LEAF(index)];
+    if (left_longest + right_longest == node_size)
+      self->longest[index] = node_size;
+    else
+      self->longest[index] = MAX(left_longest, right_longest);
+  }
+}
+```
 
 ### buddy_system实现1 -- 朱世豪实现
 从default_pmm.c所给出的示例出发，依然使用freelist的结构将空闲块记录下来，用PG_property标志位代表块是否为块首，用属性property表示该空闲块内的空闲页数。
@@ -580,17 +631,19 @@ static void buddy2_free(struct Page *pg) {
 
 **测试用例设计如下：**  
 1. 首先申请 p0 p1 p2 p3，其大小为 70 35 257 63，
-从前向后分配的块及其大小，以及对应的页如下所示：  
-|64+64|64|64|256|512|
-|----|----|----|----|----|
-|p0|p1|p3|空|p2|   
+从前向后分配的块及其大小，以及对应的页如下所示：
+ 
+| 64+64 | 64 | 64 | 256 | 512 |
+| ----- | ----- | ----- | ----- | ----- |
+| p0    | p1 | p3 |     | p2  |   
 
 2. 然后释放p0、p1、p3，这时候前512个页已经空了。  
 
-3. 然后我们申请 p4 p5，其大小为 255 255，那么这时候系统的内存空间是这样的：  
-| 256 | 256 | 256 |
-|----|----|----|
-| p4 | p5 | p2 | 
+3. 然后我们申请 p4 p5，其大小为 255 255，那么这时候系统的内存空间是这样的：
+
+|256 |256 |256 |
+|-----|-----|-----|
+| p4 | p5 | p2 |
 
 
 4. 最后释放所有page，通过断言机制assert()判定不同块的首地址。
