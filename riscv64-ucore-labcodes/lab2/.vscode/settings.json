@@ -1,0 +1,33 @@
+{
+    "files.associations": {
+        "string": "c",
+        "unordered_map": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "array": "c",
+        "*.tcc": "c",
+        "chrono": "c",
+        "cmath": "c",
+        "vector": "c",
+        "random": "c",
+        "functional": "c",
+        "numeric": "c",
+        "ostream": "c",
+        "streambuf": "c",
+        "compare": "c",
+        "ratio": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "string.h": "c",
+        "stdio.h": "c",
+        "atomic": "c",
+        "bit": "c",
+        "deque": "c",
+        "algorithm": "c",
+        "memory_resource": "c",
+        "memory": "c",
+        "stdexcept": "c",
+        "new": "c"
+    }
+}

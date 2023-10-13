@@ -1,5 +1,6 @@
 #include <default_pmm.h>
 #include <best_fit_pmm.h>
+#include<buddy_pmm.h>
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -93,24 +94,29 @@ static void page_init(void) {
 
     uint64_t maxpa = mem_end;
 
+    //???
     if (maxpa > KERNTOP) {
         maxpa = KERNTOP;
     }
+    cprintf("  maxpa: 0x%016lx\n", maxpa);
 
     extern char end[];
 
     npage = maxpa / PGSIZE;
     //kernel在end[]结束, pages是剩下的页的开始
     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
-
+    cprintf("  end: 0x%016lx\n", (void *)end);
+    //???
     for (size_t i = 0; i < npage - nbase; i++) {
         SetPageReserved(pages + i);
     }
-
+    cprintf("  nbase: 0x%016lx\n", nbase*PGSIZE);
     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * (npage - nbase));
 
     mem_begin = ROUNDUP(freemem, PGSIZE);
+    cprintf("  mem_begin: 0x%016lx\n", mem_begin);
     mem_end = ROUNDDOWN(mem_end, PGSIZE);
+    cprintf("  mem_end: 0x%016lx\n", mem_end);
     if (freemem < mem_end) {
         init_memmap(pa2page(mem_begin), (mem_end - mem_begin) / PGSIZE);
     }
