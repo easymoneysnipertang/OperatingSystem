@@ -1,4 +1,6 @@
 ### buddy_system实现2 -- 唐明昊实现
+> 实现的完整代码见[GitHub对应分支](https://github.com/easymoneysnipertang/OperatingSystem/tree/tang/riscv64-ucore-labcodes/lab2/kern/mm)。
+
 充分复用[参考资料](https://github.com/wuwenbin/buddy2)所给代码，略微调整封装好的`buddy2_new`，`buddy2_alloc`，`buddy2_free`等函数，在自己实现的`buddy_pmm_manager`中进行调用以完成对应的`buddy_init_memmap`，`buddy_alloc_pages`，`buddy_free_pages`函数功能。  
 
 #### init
@@ -110,5 +112,3 @@ buddy_free_pages(struct Page *base, size_t n) {
     buddy2_free(self, offset); // 释放空闲块
 }
 ```
-
-实现的完整代码见[GitHub对应分支](https://github.com/easymoneysnipertang/OperatingSystem/tree/tang/riscv64-ucore-labcodes/lab2/kern/mm)。
