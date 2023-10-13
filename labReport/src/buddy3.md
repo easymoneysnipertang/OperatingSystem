@@ -1,4 +1,5 @@
 ### buddy_system实现3 -- 姜永韩实现
+> 实现的完整代码见[GitHub对应分支](https://github.com/easymoneysnipertang/OperatingSystem/tree/jiang/riscv64-ucore-labcodes/lab2/kern/mm)。
 
 利用[参考资料](https://github.com/wuwenbin/buddy2)所给代码，在其基础上修改`buddy2_new`生成初始化Buddy System二叉树函数，修改`buddy2_alloc`生成内存分配函数，修改`buddy2_free`生成内存释放函数，从而在ucore上实现Buddy System。  
 
