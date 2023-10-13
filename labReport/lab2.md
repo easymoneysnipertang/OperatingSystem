@@ -661,5 +661,8 @@ static void basic_check(void){
 4. Bootloader将DTB加载到内存某个特定位置，或将位置传递给内核。  
 5. 内核通过解析DTB来获取硬件信息，包括内存布局。
 
+查看qemu源码，发现在pc-bios文件夹下有[dts文件](src/bamboo.dts)：可以看到QEMU虚拟化了AMCC Bamboo硬件平台，该设备树文件描述了CPU、内存、中断控制器、PCI控制器、以太网接口等硬件信息。  
+
 另一种路线：  
 - SBI提供sbi_query_memory接口，类似于BIOS提供的内存检测功能。
+
