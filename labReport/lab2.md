@@ -1,4 +1,15 @@
 # Lab2
+- [Lab2](#lab2)
+  - [理解 first-fit 连续物理内存分配算法（思考题）](#理解-first-fit-连续物理内存分配算法思考题)
+  - [best fit的实现](#best-fit的实现)
+  - [challenge1](#challenge1)
+    - [buddy\_system实现1 -- 朱世豪实现](#buddy_system实现1----朱世豪实现)
+    - [buddy\_system实现2 -- 唐明昊实现](#buddy_system实现2----唐明昊实现)
+    - [buddy\_system实现3 -- 姜永韩实现](#buddy_system实现3----姜永韩实现)
+    - [buddy\_system测试](#buddy_system测试)
+  - [challenge3](#challenge3)
+    - [80386时代](#80386时代)
+    - [RISCV](#riscv)
 
 ## 理解 first-fit 连续物理内存分配算法（思考题）
 
