@@ -119,6 +119,8 @@ void buddy2_alloc(struct buddy2* root, int size, int* page_num, int* parent_page
         {
             left_page->property /= 2;
             right_page->property = left_page->property;
+            if(right_page-page_base == 1)
+                cprintf("in alloc:--------------------set--------------------\n");
             SetPageProperty(right_page);
             // cprintf("in allc: node_size:%d, page_num:%d, left_page->property:%d, right_page->property:%d\n",node_size, page_num, left_page->property, right_page->property);
             list_add(&(left_page->page_link), &(right_page->page_link));
@@ -127,18 +129,11 @@ void buddy2_alloc(struct buddy2* root, int size, int* page_num, int* parent_page
         //选择下一个子节点
         if (root[LEFT_LEAF(index)].len >= size && root[RIGHT_LEAF(index)].len>=size)
         {
-            // TODO:到时候消掉if
-            if(root[LEFT_LEAF(index)].len <= root[RIGHT_LEAF(index)].len)
-                index = LEFT_LEAF(index);
-            else
-                index = RIGHT_LEAF(index);
+            index = root[LEFT_LEAF(index)].len <= root[RIGHT_LEAF(index)].len ? LEFT_LEAF(index) : RIGHT_LEAF(index);
         }
         else
         {
-            if(root[LEFT_LEAF(index)].len < root[RIGHT_LEAF(index)].len)
-                index = RIGHT_LEAF(index);
-            else
-                index = LEFT_LEAF(index);
+            index = root[LEFT_LEAF(index)].len < root[RIGHT_LEAF(index)].len ? RIGHT_LEAF(index) : LEFT_LEAF(index);
         }
         
     }
@@ -179,12 +174,12 @@ buddy_alloc_pages(size_t n)
     // 从这个页开始分配
     page = page_base + page_num;
     parent_page = page_base + parent_page_num;
-    cprintf("in alloc: page_num:%d, parent_page_num:%d\n",page_num,parent_page_num);
+    cprintf("in alloc pages: page_num:%d, parent_page_num:%d\n",page_num,parent_page_num);
 
     //根据需求n得到块大小
     nr_block++;
 
-    if (page->property != n) //还有剩余
+    if (page->property != n ) //还有剩余
     {
         if (page == parent_page) //说明page是parent_page的左孩子
         {
@@ -194,6 +189,8 @@ buddy_alloc_pages(size_t n)
             list_entry_t *prev = list_prev(&(page->page_link));
             list_del(&page->page_link);
             list_add(prev, &(right_page->page_link));
+            if(right_page-page_base == 1)
+                cprintf("in alloc pages:--------------------set--------------------\n");
             SetPageProperty(right_page);
         }
         else // page>parent_page，说明page是parent_page的右孩子
@@ -206,6 +203,8 @@ buddy_alloc_pages(size_t n)
     {
         list_del(&page->page_link);
     }
+    if(page-page_base == 1)
+        cprintf("in alloc pages:--------------------clear--------------------\n");
     ClearPageProperty(page);
     cprintf("in alloc: page_num:%d , property:%d \n",page-page_base, PageProperty(page));
 
@@ -225,12 +224,13 @@ static void
 buddy_free_pages(struct Page *base, size_t n)
 {
     assert(n>0);
-    assert(IS_POWER_OF_2(n));
+    if (!IS_POWER_OF_2(n))
+        n = fixsize(n);
     assert(base >= page_base && base < page_base + root->size);
     //对base其实也有约束    
     int div_seg_num = root->size/n;
     int page_num = base - page_base;//第几页
-    cprintf("in free: page_num: %d div_seg_num: %d\n",page_num,div_seg_num);
+    cprintf("in free: page_num: %d div_seg_num: %d, n:%d\n",page_num,div_seg_num,n);
     assert(page_num % n == 0); //必须在分位点上
 
     // 像default一样做一些检查
@@ -242,19 +242,22 @@ buddy_free_pages(struct Page *base, size_t n)
         set_page_ref(p, 0);
     }
     base->property = n;
+    if(base-page_base == 1)
+        cprintf("in free:--------------------set--------------------\n");
     SetPageProperty(base);
     nr_free += n;
 
     if (list_empty(&free_list)) 
     {
         list_add(&free_list, &(base->page_link));
-    } 
+    }
     else
     {
-        int buddy_index = div_seg_num - 1 + page_num / div_seg_num; //该页所对应的树节点
+        int buddy_index = root->size - 1 + page_num; //该页所对应的树节点
         int node_size = n;
         root[buddy_index].len = n;
-
+        cprintf("------------------in free here1----------------------\n");
+        cprintf("in free:buddy_index:%d\n",buddy_index);
         while (buddy_index) // 向上合并
         {
             buddy_index = PARENT(buddy_index);
@@ -271,7 +274,6 @@ buddy_free_pages(struct Page *base, size_t n)
                 
                 if (!in_freelist(left_page))
                 {
-                    cprintf("in free\n");
                     list_add_before(&(right_page->page_link), &(left_page->page_link));
                 }
                 if (!in_freelist(right_page))
@@ -282,6 +284,9 @@ buddy_free_pages(struct Page *base, size_t n)
                 left_page->property += right_page->property;
                 right_page->property = 0;
                 list_del(&right_page->page_link);
+                if(right_page-page_base == 1)
+                    cprintf("in free:--------------------clear--------------------\n");
+                cprintf("in free:right_page:%d\n",right_page - page_base);
                 ClearPageProperty(right_page);
             }
             else    // 没有操作
@@ -297,29 +302,90 @@ buddy_nr_free_pages(void) {
 
 static void
 buddy_check(void) {
-    // 开始检查
-    cprintf("*******************************Check begin***************************\n");
-    struct Page  *A, *B;
-    A = B  = NULL;
+/*
+整个测试流程如下:
+首先申请 p0 p1 p2 p3
+其大小为 70 35 257 63
+从前向后分配的块以及其大小 |64+64|64|64|128+128|512|
+其对应的页                 |p0   |p1|p3|空     |p2|
+然后释放p0\p1\p3
+这时候前512个页已经空了
+然后我们申请 p4 p5
+其大小为     255 255
+那么这时候系统的内存空间是这样的
+|256|256|256|
+|p4 |p5 |p2 | 
+最后释放。
+注意，指针的地址都是块的首地址。
+通过计算验证，然后将结果打印出来，较为直观。也可以通过断言机制assert()判定。
+*/
+cprintf(
+"-----------------------------------------------------"
+"\n\nThe test process is as follows:\n"
+"First,alloc   p0 p1 p2  p3\n"
+"sizes of them 70 35 257 63\n"
+"the buddy block:    |64+64|64|64|128+128|512|\n"
+"the pages we alloc: |p0   |p1|p3|empty  |p2|\n"
+"then,free. p0 p1 p3\n"
+"now,the first 512 pages are free\n"
+"then alloc:     p4  p5\n"
+"sizes of the:   255 255\n"
+"now,the distribution in memory space are below:\n"
+"|256|256|256|\n"
+"|p4 |p5 |p2 |\n"
+"Last,free all buddy blocks.\n"
+"Notice!addr of pointer is the base addr of the buddy block\n"
+"we use cprintf() show the progress and if you want, you can use assert() to judge.\n\n"
+"------------------------------------------------------\n");
 
-    assert((A = alloc_page()) != NULL);
-    cprintf("in check: page_num: %d, property: %d \n",A - page_base, PageProperty(A));
-    assert((B = alloc_page()) != NULL);
-
-    assert( A != B);
-    assert(page_ref(A) == 0 && page_ref(B) == 0);
-    //free page就是free pages(A,1)
-    free_page(A);
-    free_page(B);
-
-
-    //A=alloc_pages(500);     //alloc_pages返回的是开始分配的那一页的地址
-    A=alloc_pages(70); //
-    //B=alloc_pages(500);
-    B=alloc_pages(35);
-    cprintf("in check: A %p\n",A);
-    cprintf("in check: B %p\n",B);
-    cprintf("********************************Check End****************************\n");
+    struct Page *p0, *p1,*p2;
+    p0 = p1 = NULL;
+    p2=NULL;
+    struct Page *p3, *p4,*p5;
+    assert((p0 = alloc_page()) != NULL);
+    assert((p1 = alloc_page()) != NULL);
+    assert((p2 = alloc_page()) != NULL);
+    free_page(p0);
+    free_page(p1);
+    free_page(p2);
+    
+    p0=alloc_pages(70);
+    p1=alloc_pages(35);
+    //注意，一个结构体指针是20个字节，有3个int,3*4，还有一个双向链表,两个指针是8。加载一起是20。
+    cprintf("p0 %p\n",p0);
+    cprintf("p1 %p\n",p1);
+    cprintf("p1-p0 equal %p ?=128\n",p1-p0);//应该差128
+    
+    p2=alloc_pages(257);
+    cprintf("p2 %p\n",p2);
+    cprintf("p2-p1 equal %p ?=128+256\n",p2-p1);//应该差384
+    
+    p3=alloc_pages(63);
+    cprintf("p3 %p\n",p3);
+    cprintf("p3-p1 equal %p ?=64\n",p3-p1);//应该差64
+    
+    free_pages(p0,70);    
+    cprintf("free p0!\n");
+    free_pages(p1,35);
+    cprintf("free p1!\n");
+    free_pages(p3,63);    
+    cprintf("free p3!\n");
+    
+    p4=alloc_pages(255);
+    cprintf("p4 %p\n",p4);
+    cprintf("p2-p4 equal %p ?=512\n",p2-p4);//应该差512
+    
+    p5=alloc_pages(255);
+    cprintf("p5 %p\n",p5);
+    cprintf("p5-p4 equal %p ?=256\n",p5-p4);//应该差256
+        free_pages(p2,257);    
+    cprintf("free p2!\n");
+        free_pages(p4,255);    
+    cprintf("free p4!\n"); 
+            free_pages(p5,255);    
+    cprintf("free p5!\n");   
+    cprintf("CHECK DONE!\n"
+"-----------------------------------------------------\n") ;
 }
 
 const struct pmm_manager buddy_pmm_manager = {
