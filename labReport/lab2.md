@@ -1,6 +1,6 @@
 # Lab2
 - [Lab2](#lab2)
-  - [理解 first-fit 连续物理内存分配算法（思考题）](#理解-first-fit-连续物理内存分配算法思考题)
+  - [理解 first-fit 连续物理内存分配算法](#理解-first-fit-连续物理内存分配算法)
   - [best fit的实现](#best-fit的实现)
   - [challenge1](#challenge1)
     - [buddy\_system实现1 -- 朱世豪实现](#buddy_system实现1----朱世豪实现)
@@ -11,7 +11,7 @@
     - [80386时代](#80386时代)
     - [RISCV](#riscv)
 
-## 理解 first-fit 连续物理内存分配算法（思考题）
+## 理解 first-fit 连续物理内存分配算法
 
 > first-fit 连续物理内存分配算法作为物理内存分配一个很基础的方法，需要同学们理解它的实现过程。请大家仔细阅读实验手册的教程并结合 kern/mm/default_pmm.c 中的相关代码，认真分析 default_init，default_init_memmap，default_alloc_pages，default_free_pages 等相关函数，并描述程序在进行物理内存分配的过程以及各个函数的作用。请在实验报告中简要说明你的设计实现过程。  
 first fit 算法是否有进一步的改进空间？
