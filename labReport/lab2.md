@@ -409,7 +409,55 @@ static void basic_check(void){
 5. 内核通过解析DTB来获取硬件信息，包括内存布局。
 
 查看qemu源码，发现在pc-bios文件夹下有[dts文件](src/bamboo.dts)：可以看到QEMU虚拟化了AMCC Bamboo硬件平台，该设备树文件描述了CPU、内存、中断控制器、PCI控制器、以太网接口等硬件信息。  
+另外，在qemu文件下，还发现了[device_tree.c](src/device_tree.c)文件，该文件提供了读取device tree信息和操作设备树等接口。
 
 另一种路线：  
 - SBI提供sbi_query_memory接口，类似于BIOS提供的内存检测功能。
 
+我们在linux的RISCV内核代码中找到了如下代码，内核通过调用SBI接口查询可用内存大小，让Berkeley Boot Loader在Supervisor态执行。
+
+```C
+static void __init setup_bootmem(void)
+{
+	unsigned long ret;
+	memory_block_info info;
+
+	ret = sbi_query_memory(0, &info);
+	BUG_ON(ret != 0);
+	BUG_ON((info.base & ~PMD_MASK) != 0);
+	BUG_ON((info.size & ~PMD_MASK) != 0);
+	pr_info("Available physical memory: %ldMB\n", info.size >> 20);
+
+	/* The kernel image is mapped at VA=PAGE_OFFSET and PA=info.base */
+	va_pa_offset = PAGE_OFFSET - info.base;
+	pfn_base = PFN_DOWN(info.base);
+
+	if ((mem_size != 0) && (mem_size < info.size)) {
+		memblock_enforce_memory_limit(mem_size);
+		info.size = mem_size;
+		pr_notice("Physical memory usage limited to %lluMB\n",
+			(unsigned long long)(mem_size >> 20));
+	}
+	set_max_mapnr(PFN_DOWN(info.size));
+	max_low_pfn = PFN_DOWN(info.base + info.size);
+
+#ifdef CONFIG_BLK_DEV_INITRD
+	setup_initrd();
+#endif /* CONFIG_BLK_DEV_INITRD */
+
+	memblock_reserve(info.base, __pa(_end) - info.base);
+	reserve_boot_page_table(pfn_to_virt(csr_read(sptbr)));
+	memblock_allow_resize();
+}
+
+uintptr_t __sbi_query_memory(uintptr_t id, memory_block_info *p)
+{
+  if (id == 0) {
+    p->base = first_free_paddr;
+    p->size = mem_size + DRAM_BASE - p->base;
+    return 0;
+  }
+
+  return -1;
+}
+```
