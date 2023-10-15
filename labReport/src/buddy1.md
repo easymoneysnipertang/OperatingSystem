@@ -1,4 +1,6 @@
 ### buddy_system实现1 -- 朱世豪实现
+> 实现的完整代码见[GitHub对应分支](https://github.com/easymoneysnipertang/OperatingSystem/tree/hh_lg/riscv64-ucore-labcodes/lab2/kern/mm)。
+
 从default_pmm.c所给出的示例出发，依然使用freelist的结构将空闲块记录下来，用PG_property标志位代表块是否为块首，用属性property表示该空闲块内的空闲页数。
 
 所实现架构的的特点在于对freelist的管理：
