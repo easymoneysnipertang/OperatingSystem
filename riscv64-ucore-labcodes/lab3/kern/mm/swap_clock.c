@@ -40,7 +40,8 @@ _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, in
 
     // 将页面的visited标志置为1，表示该页面已被访问
     pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
-    *ptep &= ~PTE_A;
+    //page->visited = 1;  // 用啥做标志都行
+    *ptep |= PTE_A;
 
     curr_ptr = entry;
     cprintf("curr_ptr %px\n", curr_ptr);  // 打印了 make grade才能通过
@@ -76,6 +77,7 @@ _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tic
         // 如果当前页面未被访问，则将该页面从页面链表中删除，并将该页面指针赋值给ptr_page作为换出页面
         pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
         if((*ptep & PTE_A) == 0) {
+        //if(page->visited == 0) {
             list_del(curr_ptr);
             *ptr_page = page;
             break;
@@ -84,6 +86,7 @@ _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tic
         // 如果当前页面已被访问，则将visited标志置为0，表示该页面已被重新访问
         else {
             *ptep &= ~PTE_A;
+            //page->visited = 0;
         }
     }
     return 0;
