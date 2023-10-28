@@ -179,7 +179,7 @@ _clock_init_mm(struct mm_struct *mm)
 ```
 
 `swappable`函数目的是将一页插入置换页链表，Clock算法在此处的实现并不困难，像FIFO一样把页插入到链表尾部，只需将其标志位置为1。  
-在这里我们使用PTE_A来将
+在这里我们使用`PTE_A`来标识页面最近被访问，因为我们期望硬件在访问页时，能够自动将`swap_out`刷新掉的`PTE_A`置位，以达到真正的Clock置换的目的。这将在后面详细介绍。
 ```C
 static int
 _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
@@ -203,6 +203,49 @@ _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, in
     return 0;
 }
 ```
+
+在`swap_out`时，需要查找最早未被访问的页面。我们从`curr_ptr`往后循环遍历，确认页的`PTE_A`访问位是否置1，若已经被置1则刷新该位置，查看链表上的下一页，直到找到`PTE_A`位为0的页。确定该页即是将被换出的页，将其摘出链表。
+```C
+static int
+_clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
+{
+    list_entry_t *head=(list_entry_t*) mm->sm_priv;
+    assert(head != NULL);
+    assert(in_tick==0);
+    
+    while (1) {
+        /*LAB3 EXERCISE 4: YOUR CODE*/ 
+        // 编写代码
+        // 遍历页面链表pra_list_head，查找最早未被访问的页面
+        if(list_next(curr_ptr) == head)
+            curr_ptr = head->next;
+        else
+            curr_ptr = list_next(curr_ptr);
+
+        // 获取当前页面对应的Page结构指针
+        struct Page *page = le2page(curr_ptr, pra_page_link);
+
+        // 如果当前页面未被访问，则将该页面从页面链表中删除，并将该页面指针赋值给ptr_page作为换出页面
+        pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
+        if((*ptep & PTE_A) == 0) {
+            list_del(curr_ptr);
+            *ptr_page = page;
+            break;
+        }
+
+        // 如果当前页面已被访问，则将visited标志置为0，表示该页面已被重新访问
+        else {
+            *ptep &= ~PTE_A;
+        }
+    }
+    return 0;
+}
+```
+
+### Clock算法与FIFO算法比较
+Clock算法与FIFO算法整体上有些类似，Clock是换出最先找到的`PTE_A`标志位为0的页。如果链表上所有页该标志位都为1，扫描一遍后，Clock并不会置换任何页，而是进行第二遍扫描。如果在进行第二次扫描之前，对应页又被访问了，则该页不会被置换出去，这即是Clock与FIFO最大的不同。  
+值得注意的是，在这里我们使用的是`PTE_A`作为标志位，因为我们期望硬件在访问过程中会改变它的值。而如果使用`visited`字段来标识的话，该字段只有在缺页异常时才会进行更新，在扫描过后无法恢复，达不到Clock算法的目的，效果上等同于FIFO。  
+但`PTE_A`标志位的有效性仍有待商榷，这我们将在LRU实现里进行讨论。
 
 
 ## 练习5：阅读代码和实现手册，理解页表映射方式相关知识
