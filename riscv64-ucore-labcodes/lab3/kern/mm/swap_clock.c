@@ -20,7 +20,6 @@ _clock_init_mm(struct mm_struct *mm)
     curr_ptr = &pra_list_head;
     // 将mm的私有成员指针指向pra_list_head，用于后续的页面替换算法操作
     mm->sm_priv = &pra_list_head;
-    //cprintf(" mm->sm_priv %x in fifo_init_mm\n",mm->sm_priv);
     return 0;
 }
 
@@ -29,8 +28,8 @@ static int
 _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
 {
     list_entry_t *entry=&(page->pra_page_link);
- 
     assert(entry != NULL && curr_ptr != NULL);
+    
     //record the page access situlation
     /*LAB3 EXERCISE 4: YOUR CODE*/ 
     list_entry_t *head=(list_entry_t*) mm->sm_priv;
