@@ -150,6 +150,7 @@ void interrupt_handler(struct trapframe *tf) {
             clock_set_next_event();
             if (++ticks % TICK_NUM == 0) {
                 print_ticks();
+                swap_tick_event(check_mm_struct);
             }
             break;
         case IRQ_H_TIMER:
