@@ -84,8 +84,126 @@
 所以我们认为这样的写法很好，没有必要把两个函数拆开。
 
 ## 练习3：给未被映射的地址映射上物理页
+> 补充完成do_pgfault（mm/vmm.c）函数，给未被映射的地址映射上物理页。设置访问权限的时候需要参考页面所在VMA的权限，同时需要注意映射物理页时需要操作内存控制结构所指定的页表，而不是内核的页表。
+
+当程序访问一个未被映射的地址时，此时就会产生缺页异常，这时需要在内核中处理这个异常，给这个地址映射上物理页。这个过程需要完成以下几个步骤：
+1. 通过`find_vma`函数找到包含这个地址的`vma`结构，如果找不到，或者找到的`vma`结构的起始地址大于这个地址，说明这个地址不在任何一个`vma`结构的范围内，程序访问了一个非法地址，此时直接返回`-E_INVAL`。
+2. 根据该地址所在`vma`的权限，设置需要分配的内存页的权限。
+3. 利用`ROUNDDOWN`宏将这个地址向下对齐到页的边界，根据页的首地址，利用`get_pte`函数找到该页对应的页表项。
+   - 如果页表项不存在，说明这个页还没有被映射，利用`pgdir_alloc_page`分配一个物理页，然后将这个物理页映射到这个页表项上。
+   - 若页表项存在，则说明该页被置换到了硬盘上，通过`swap_in`将其写入内存，然后用`page_insert`将其映射到这个页表项上，最后用`swap_map_swappable`将其加入到`swap_manager`的管理中。
+4. 成功映射，则最后返回`0`。
+```C
+int do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
+    int ret = -E_INVAL;
+    //try to find a vma which include addr
+    struct vma_struct *vma = find_vma(mm, addr);
+
+    pgfault_num++;
+
+    if (vma == NULL || vma->vm_start > addr) {
+        cprintf("not valid addr %x, and  can not find it in vma\n", addr);
+        goto failed;
+    }
+    
+    uint32_t perm = PTE_U;
+    if (vma->vm_flags & VM_WRITE) {
+        perm |= (PTE_R | PTE_W);
+    }
+    addr = ROUNDDOWN(addr, PGSIZE);
+
+    ret = -E_NO_MEM;
+
+    pte_t *ptep=NULL;
+
+
+    ptep = get_pte(mm->pgdir, addr, 1);  
+
+    if (*ptep == 0) {
+        if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
+            cprintf("pgdir_alloc_page in do_pgfault failed\n");
+            goto failed;
+        }
+    } else {
+        if (swap_init_ok) {
+            struct Page *page = NULL;
+            swap_in(mm, addr, &page); 
+            page_insert(mm->pgdir, page, addr, perm);
+            swap_map_swappable(mm, addr, page, 1);
+            page->pra_vaddr = addr;
+            
+        } else {
+            cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
+            goto failed;
+        }
+   }
+   ret = 0;
+
+failed:
+    return ret;
+}
+```
+
+> 请描述页目录项（PageDirectoryEntry）和页表项（PageTableEntry）中组成部分对ucore实现页替换算法的潜在用处。
+- 页表项记录了虚拟地址到物理地址的映射，mmu需要通过页表项才能获得虚拟地址对应的物理地址。
+- 页表项被用来维护该物理页与swap磁盘上扇区的映射关系，当虚拟页被换出到磁盘时，页表项或页目录项中的低8位置0，然后在高24位保存其在硬盘上的位置。页替换涉及到换入换出，换入时通过`do_pgfault`将某个虚拟地址对应于磁盘的一页内容读入到内存中，换出时需要将某个虚拟页的内容写到磁盘中的某个位置，页表项了记录该虚拟页在磁盘中的位置，为换入换出提供磁盘位置信息。
+- 页目录项和页表项中的Accessed位保存了页是否被访问，Dirty位是否被修改，通过这些位可以设计更合理的页替换算法。
+
+>  如果ucore的缺页服务例程在执行过程中访问内存，出现了页访问异常，请问硬件要做哪些事情？
+
+此时会固定的跳转到初始化stvec时设置好的处理程序地址，也即__alltraps处，进行上下文保存，以及将发生缺页中断的地址保存到`trapframe`中。然后跳转到中断处理函数trap()，具体由`do_pgfault`处理，解决完毕返回到__trapret恢复保存的寄存器，也即上下文，通过sret跳转回原程序。
+
+
+> 数据结构Page的全局变量（其实是一个数组）的每一项与页表中的页目录项和页表项有无对应关系？
+如果有，其对应关系是啥？
+
+数据结构Page的全局变量是一个用于管理物理内存页的数组，每个Page结构体记录了一个物理页的属性和状态。页表中的页目录项和页表项是用于实现虚拟地址到物理地址的映射关系的数据结构，每个页目录项或页表项记录了一个虚拟页对应的物理页的起始地址和一些标志位等信息。  
+数据结构Page的全局变量与页表中的页目录项和页表项之间没有直接的对应关系，但是它们都涉及到物理内存页的管理和使用。数据结构Page的全局变量可以通过物理地址找到对应的Page结构体，而页表中的页目录项和页表项可以通过其高20位的虚拟地址找到对应的物理地址。通过物理地址可以确定物理页号，从而找到对应的Page结构体。
 
 ## 练习4：补充完成 Clock 页替换算法
+按照给出的代码框架补充完成Clock页替换算法：  
+Clock的初始化函数与FIFO的差别并不大，初始化`pra_list_head`链表，让mm的`sm_priv`指向`pra_list_head`，方便后续的算法调用。唯一的区别是初始化`curr_ptr`指针，让其指向当前的队列头。
+```C
+static int
+_clock_init_mm(struct mm_struct *mm)
+{     
+    /*LAB3 EXERCISE 4: YOUR CODE*/ 
+    // 初始化pra_list_head为空链表
+    list_init(&pra_list_head);
+    // 初始化当前指针curr_ptr指向pra_list_head，表示当前页面替换位置为链表头
+    curr_ptr = &pra_list_head;
+    // 将mm的私有成员指针指向pra_list_head，用于后续的页面替换算法操作
+    mm->sm_priv = &pra_list_head;
+    return 0;
+}
+```
+
+`swappable`函数目的是将一页插入置换页链表，Clock算法在此处的实现并不困难，像FIFO一样把页插入到链表尾部，只需将其标志位置为1。  
+在这里我们使用PTE_A来将
+```C
+static int
+_clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
+{
+    list_entry_t *entry=&(page->pra_page_link);
+    assert(entry != NULL && curr_ptr != NULL);
+    //record the page access situlation
+    /*LAB3 EXERCISE 4: YOUR CODE*/ 
+    list_entry_t *head=(list_entry_t*) mm->sm_priv;
+
+    // 将页面page插入到页面链表pra_list_head的末尾
+    list_add(head->prev, entry);
+
+    // 将页面的visited标志置为1，表示该页面已被访问
+    pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
+    //page->visited = 1;  // 用啥做标志都行
+    *ptep |= PTE_A;
+
+    curr_ptr = entry;
+    cprintf("curr_ptr %px\n", curr_ptr);  // 打印了 make grade才能通过
+    return 0;
+}
+```
+
 
 ## 练习5：阅读代码和实现手册，理解页表映射方式相关知识
 ### 大页表优势
@@ -99,3 +217,16 @@
 3. 如果使用大页表的话，一页只能存512个页表项，难免会使用比页更大的内存分配单位，容易造成内存碎片问题。
 
 ## Challenge：实现不考虑实现开销和效率的 LRU 页替换算法
+
+## 知识点分析
+
+### 重要知识点
+- 缺页异常：当程序访问一个不存在于物理内存中的虚拟页面时，会触发缺页异常，由操作系统负责处理。处理过程包括找到所需页面的磁盘位置，选择一个合适的物理帧进行置换，将所需页面加载到物理内存中，更新页表和帧表，恢复程序执行。
+- 页面置换：当物理内存不足时，需要将某些物理页面换出到外存中，以腾出空间给新的页面。页面置换算法决定了哪些页面应该被换出，以达到最小化缺页次数和最大化内存利用率的目的。
+- 页面置换算法：有多种页面置换算法，例如FIFO, LRU, Clock, 工作集, 缺页率等。不同的算法有不同的优缺点和实现难度。一些算法可能会出现Belady现象，即增加物理页面数反而导致缺页次数增加。
+- uCore虚拟内存机制：uCore实现了基于工作集的页面置换算法，使用mm_struct结构体管理虚拟内存空间，使用vma_struct结构体描述虚拟内存区域，使用swap_manager接口实现交换机制。
+
+### 额外知识点
+本次实验并未设计页面置换算法的评价标准和性能比较，页面置换算法的目标是尽量减少缺页异常的发生次数，提高内存利用率和程序运行效率。页面置换算法的评价标准主要有缺页率和置换开销。 
+- 缺页率：指发生缺页异常的次数与程序访问内存次数的比值。 
+- 置换开销：指进行页面置换所需的时间和资源消耗。 
