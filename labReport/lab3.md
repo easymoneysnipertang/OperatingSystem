@@ -269,6 +269,38 @@ Clock算法与FIFO算法整体上有些类似，Clock是换出最先找到的`PT
 ## Challenge：实现不考虑实现开销和效率的 LRU 页替换算法
 
 ### 代码设计
+LRU目的是寻找最近最少访问的页面，最精确的设计需要**实时监控哪些内存页被访问**，并将其移动到链表前端。  
+在本次实验中，没有相应的硬件支持，我们无法获悉内存页被访问的具体时间，只有当发生pageFault的时候才能够确认。但如果仅靠pageFault时来进行检查访问情况以调整链表，效果上又和FIFO没有太大区别了。  
+为了最好的设计出近似LRU的效果，不考虑开销和效率，我们想到了**利用时钟中断**。  
+
+因为内存页被访问时，其`PTE_A`位会被相应的置位（硬件上存在问题，后续进行讨论），我们可以**借助时钟中断，确认在两次时钟中断期间，哪些页面被进行了访问，进而调整其在置换链表中的位置**。理论上，只要时钟中断频率够高，该设计就越近似于LRU。  
+
+代码实现上，其他函数均能复用FIFO的代码，但需重写`tick_event`：  
+下面的函数将被逐层封装，在时钟中断时会进行调用，遍历整个置换页链表，找出在两次时钟中断期间被访问了的页，将其移动到链表头部，并改变它的`PTE_A`位。
+```C
+static int
+_lru_tick_event(struct mm_struct *mm)
+{ 
+    list_entry_t* head = (list_entry_t*)mm->sm_priv;
+    list_entry_t* cur = head;
+    while (cur->next != head)  // 遍历链表
+    {
+        cur = cur->next;
+        struct Page* page = le2page(cur, pra_page_link);
+        pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
+        if (*ptep & PTE_A)      // 页面在一段时间内被访问了，拿到最前，置零
+        {
+            list_entry_t* temp = cur->prev;
+            list_del(cur);
+            *ptep &= ~PTE_A;  // 清0
+            list_add(head, cur);  // 移动位置
+            cur = temp;
+        }
+        // cprintf("here in lru_tick_event\n");
+    }
+    return 0;
+}
+```
 
 ### 问题分析
 
