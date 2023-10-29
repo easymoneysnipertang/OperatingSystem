@@ -72,7 +72,7 @@ _lru_check_swap(void) {
     swap_tick_event(check_mm_struct);
     // 页面状态：c0 e0 a0 b0
 
-    cprintf("write Virt Page b in lru_check_swap\n");
+    cprintf("write Virt Page d in lru_check_swap\n");
     *(unsigned char *)0x4000 = 0x0e;
     assert(pgfault_num==6);
     // 页面状态：d1 c0 e0 a0
