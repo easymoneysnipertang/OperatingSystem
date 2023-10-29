@@ -272,7 +272,98 @@ Clock算法与FIFO算法整体上有些类似，Clock是换出最先找到的`PT
 
 ### 问题分析
 
+由于我们的LRU算法主要利用的是页表被访问时硬件自动更新的`PTE_A`位，所以我们需要先测试一下这个位是否能够正常工作。  
+我们使用的测试代码如下：
+```c
+volatile uintptr_t la = 0x8000;
+while (la <= 0x40000000)
+{
+    cprintf("***************************************************\n");
+    volatile pte_t *ptep = get_pte(check_mm_struct->pgdir, la, 0);
+    cprintf("ptep before access:%0x\n", *ptep);
+    (*(volatile unsigned char *)la) = 0x0a;
+    cprintf("ptep after access:%x\n", *ptep);
+    cprintf("data at la: %u\n", *(volatile unsigned char *)la);
+    if ((*ptep) & PTE_A)
+    {
+        cprintf("*****************access bit set*********************\n");
+        // 将access bit复位
+        (*ptep) &= ~PTE_A;
+        *(volatile unsigned char *)la = 0x0b;
+        cprintf("data at la: %u\n", *(volatile unsigned char *)la);
+        while (!(*ptep & PTE_A))
+        {
+            
+        }
+        cprintf("ptep after access:%x\n", *ptep);
+        break;
+    }
+    la +=0x1000;
+}
+```
+
+上面的测试中，我们首先访问了一个未在页表中的地址，引发缺页异常，导致其PTE_A被置位，随后我们获得了该页的页表项，将其PTE_A复位，再次访问该页，发现PTE_A被置位，说明硬件能够正常更新PTE_A位。 
+
+经过这个测试，发现第一次发生缺页异常时，硬件能够正常将PTE_A置位，但是手动清空PTE_A之后，再次访问该页，硬件并没有将PTE_A置位。  
+
+为此，我们询问了老师，老师解释的是正常情况下都会将PTE_A置位，但是这里可能是ptep获取错误以及cache替换策略等原因，导致它没有被置位，但是实际上硬件是会将PTE_A置位的。所以我们可以放心地使用PTE_A作为标志位。
+
 ### 算法测试
+
+下面是我们的代码测试程序：
+
+```c
+static int
+_lru_check_swap(void) {
+    //pte_t* ptep = get_pte()
+    // 页面状态：d1 c1 b1 a1
+    // 假设发生一次时钟中断，导致lru
+    swap_tick_event(check_mm_struct);
+    // 页面状态：a0 b0 c0 d0
+
+    cprintf("write Virt Page e in lru_check_swap\n");
+    *(unsigned char *)0x5000 = 0x0e;
+    assert(pgfault_num==5);
+
+    // 页面状态：e1 a0 b0 c0
+    cprintf("write Virt Page c and set Access bit\n");
+    pte_t *ptep = get_pte(check_mm_struct->pgdir, 0x3000, 0);
+    *ptep |= PTE_A;
+    // 页面状态：e1 a0 b0 c1
+
+    // 假设发生一次时钟中断，导致lru
+    swap_tick_event(check_mm_struct);
+    // 页面状态：c0 e0 a0 b0
+
+    cprintf("write Virt Page d in lru_check_swap\n");
+    *(unsigned char *)0x4000 = 0x0e;
+    assert(pgfault_num==6);
+    // 页面状态：d1 c0 e0 a0
+
+    cprintf("write Virt Page b in lru_check_swap\n");
+    *(unsigned char *)0x2000 = 0x0e;
+    assert(pgfault_num==7);
+
+    return 0;
+}
+```
+
+我们用手动调用swap_tick_event的方式来模拟真实情况下PTE_A标志位被硬件置位的过程，每次调用swap_tick_event，都将最近访问过的页提到最前并将其PTE_A复位。  
+
+由此我设计了如下流程对代码展开测试：  
+
+| 时间序列 | 页表情况 | 发生动作|
+| :------: | :------: | :------: |
+|    1     |    d1  c1  b1  a1    |初始化|
+|    2     | **a0 b0 c0 d0** |lru置换|
+|    3     | **e1** a0 b0 c0 |访问e，换出d|
+|    4     | e1 a0 b0 **c1** |访问c|
+|    5     | **c0 e0** a0 b0 |lru置换|
+| 6 | **d1** c0 e0 a0 |访问d，换出b|  
+
+测试结果显示，lru的实现是正确的。如下图所示：
+
+![mhartid](src/lab3_swap_check.jpg)
 
 ## 知识点分析
 
