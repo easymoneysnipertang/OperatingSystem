@@ -27,6 +27,8 @@ struct vma_struct {
 #define VM_EXEC                 0x00000004
 
 // the control struct for a set of vma using the same PDT
+// 维护所有可用的虚拟地址/虚拟页的集合
+// 每个页表（每个虚拟地址空间）可能包含多个vma，也就是多个不相交的连续虚拟地址区间
 struct mm_struct {
     list_entry_t mmap_list;        // linear list link which sorted by start addr of vma
     struct vma_struct *mmap_cache; // current accessed vma, used for speed purpose
