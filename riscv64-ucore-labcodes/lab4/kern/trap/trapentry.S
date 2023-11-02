@@ -107,6 +107,7 @@ __alltraps:
 __trapret:
     RESTORE_ALL
     # go back from supervisor call
+    # pc <- sepc
     sret
  
     .globl forkrets

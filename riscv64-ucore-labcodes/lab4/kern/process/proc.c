@@ -102,8 +102,31 @@ alloc_proc(void) {
      *       uint32_t flags;                             // Process flag
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
-
-
+    
+    // 设置进程为 初始 态
+    proc->state = PROC_UNINIT;
+    // 设置pid为-1
+    proc->pid = -1;
+    // 设置runs，运行次数为0
+    proc->runs = 0;
+    // 设置kstack为NULL
+    proc->kstack = NULL;
+    // 设置need_resched为0
+    proc->need_resched = 0;
+    // 设置parent为当前进程，idle进程是没有父进程的，将会是NULL
+    proc->parent = current;
+    // mm设置为空
+    proc->mm = NULL;
+    // 上下文设置为空
+    memset(&proc->context, 0, sizeof(struct context));
+    // tf置空
+    proc->tf = 0;
+    // 使用内核页目录表的基址
+    proc->cr3 = boot_cr3;
+    // flags置为0
+    proc->flags = 0;
+    // name置空
+    memset(&proc->name, 0, PROC_NAME_LEN+1);
     }
     return proc;
 }
@@ -210,12 +233,21 @@ find_proc(int pid) {
 //       proc->tf in do_fork-->copy_thread function
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
+    // 上下文初始化
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
+
+    // 内核线程的参数和函数指针
     tf.gpr.s0 = (uintptr_t)fn;
     tf.gpr.s1 = (uintptr_t)arg;
+
+    //supervisor模式，启用中断
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
+
+    // 入口点设置，在trap返回的时候起作用
     tf.epc = (uintptr_t)kernel_thread_entry;
+
+    // 创建新进程
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
 
@@ -340,6 +372,7 @@ proc_init(void) {
         list_init(hash_list + i);
     }
 
+    // 创建内核线程idle
     if ((idleproc = alloc_proc()) == NULL) {
         panic("cannot alloc idleproc.\n");
     }
@@ -371,6 +404,7 @@ proc_init(void) {
 
     current = idleproc;
 
+    // kernel_thread创建init内核线程
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0) {
         panic("create init_main failed.\n");
@@ -387,7 +421,7 @@ proc_init(void) {
 void
 cpu_idle(void) {
     while (1) {
-        if (current->need_resched) {
+        if (current->need_resched) { //调度器调度
             schedule();
         }
     }
