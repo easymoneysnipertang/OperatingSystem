@@ -118,7 +118,7 @@ alloc_proc(void) {
     // mm设置为空
     proc->mm = NULL;
     // 上下文设置为空
-    memset(&proc->context, 0, sizeof(struct context));
+    memset(&(proc->context), 0, sizeof(struct context));
     // tf置空
     proc->tf = 0;
     // 使用内核页目录表的基址
@@ -126,7 +126,7 @@ alloc_proc(void) {
     // flags置为0
     proc->flags = 0;
     // name置空
-    memset(&proc->name, 0, PROC_NAME_LEN+1);
+    memset(&(proc->name), 0, PROC_NAME_LEN+1);
     }
     return proc;
 }
@@ -203,7 +203,7 @@ proc_run(struct proc_struct *proc) {
             struct proc_struct* present_proc = current;
             current = proc;
             lcr3(proc->cr3);
-            switch_to(&present_proc->context, &proc->context);
+            switch_to(&(present_proc->context), &(proc->context));
         }
         local_intr_restore(intr_flag);
     }
@@ -337,7 +337,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     if ((proc = alloc_proc()) == NULL)
     {
         // 分配进程失败
-        goto bad_fork_cleanup_proc;
+        goto fork_out;
     }
     proc->parent = current;
 
