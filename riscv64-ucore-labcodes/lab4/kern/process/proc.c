@@ -71,8 +71,10 @@ static list_entry_t hash_list[HASH_LIST_SIZE];
 // idle proc
 struct proc_struct *idleproc = NULL;
 // init proc
+// 本实验中，指向一个内核线程。本实验以后，此指针将指向第一个用户态进程
 struct proc_struct *initproc = NULL;
 // current proc
+// 当前占用 CPU 且处于“运行”状态进程控制块指针
 struct proc_struct *current = NULL;
 
 static int nr_process = 0;
@@ -102,8 +104,18 @@ alloc_proc(void) {
      *       uint32_t flags;                             // Process flag
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
-
-
+    proc->state = PROC_UNINIT;
+    proc->pid = -1;
+    proc->runs = 0;
+    proc->kstack = 0;
+    proc->need_resched = 0;
+    proc->parent = NULL;
+    proc->mm = NULL;
+    memset(&(proc->context), 0, sizeof(struct context));
+    proc->tf = NULL;
+    proc->cr3 = boot_cr3;
+    proc->flags = 0;
+    memset(proc->name, 0, PROC_NAME_LEN);
     }
     return proc;
 }
@@ -129,12 +141,15 @@ get_pid(void) {
     static_assert(MAX_PID > MAX_PROCESS);
     struct proc_struct *proc;
     list_entry_t *list = &proc_list, *le;
+    // static int只会初始化一次，之后就不会再初始化了
     static int next_safe = MAX_PID, last_pid = MAX_PID;
     if (++ last_pid >= MAX_PID) {
+        // 从1开始分配pid
         last_pid = 1;
         goto inside;
     }
     if (last_pid >= next_safe) {
+        // 分配超过max_pid的时候
     inside:
         next_safe = MAX_PID;
     repeat:
@@ -142,7 +157,9 @@ get_pid(void) {
         while ((le = list_next(le)) != list) {
             proc = le2proc(le, list_link);
             if (proc->pid == last_pid) {
+                // pid == last_pid的进程已经存在，last_pid++
                 if (++ last_pid >= next_safe) {
+                    
                     if (last_pid >= MAX_PID) {
                         last_pid = 1;
                     }
@@ -151,6 +168,7 @@ get_pid(void) {
                 }
             }
             else if (proc->pid > last_pid && next_safe > proc->pid) {
+                // 有一个pid比last_pid大，且比next_safe小，那么就把next_safe设置为这个pid
                 next_safe = proc->pid;
             }
         }
@@ -162,6 +180,7 @@ get_pid(void) {
 // NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
 void
 proc_run(struct proc_struct *proc) {
+    // 如果相同则不需要切换
     if (proc != current) {
         // LAB4:EXERCISE3 YOUR CODE
         /*
@@ -172,7 +191,20 @@ proc_run(struct proc_struct *proc) {
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
-       
+        // 禁用中断
+        bool intr_flag;
+        struct proc_struct *prev = current;  // prev指向当前正在运行的进程
+        local_intr_save(intr_flag);
+        {
+            // 切换当前进程为要运行的进程
+            current = proc;
+            // 切换页表
+            lcr3(proc->cr3);
+            // 切换上下文
+            switch_to(&(prev->context), &(proc->context));
+        }
+        local_intr_restore(intr_flag);
+
     }
 }
 
@@ -210,12 +242,17 @@ find_proc(int pid) {
 //       proc->tf in do_fork-->copy_thread function
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
+    // 对trameframe/中断帧，也就是程序的一些上下文进行一些初始化？
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
-    tf.gpr.s0 = (uintptr_t)fn;
-    tf.gpr.s1 = (uintptr_t)arg;
+    // 设置内核线程要执行的函数指针及参数
+    tf.gpr.s0 = (uintptr_t)fn;  // 函数指针
+    tf.gpr.s1 = (uintptr_t)arg;  // 函数参数
+    // 设置SSTATUS寄存器：supervisor，启用中断，关闭中断
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
+    // 设置入口点，会去调用fn
     tf.epc = (uintptr_t)kernel_thread_entry;
+    // 真正使用tf创建新进程
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
 
@@ -249,12 +286,13 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
 //             - setup the kernel entry point and stack of process
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
+    // 先分配出trapframe的空间
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
     *(proc->tf) = *tf;
 
     // Set a0 to 0 so a child process knows it's just forked
     proc->tf->gpr.a0 = 0;
-    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
+    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;  // ？
 
     proc->context.ra = (uintptr_t)forkret;
     proc->context.sp = (uintptr_t)(proc->tf);
@@ -269,6 +307,7 @@ int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     int ret = -E_NO_FREE_PROC;
     struct proc_struct *proc;
+    // 进程数目超过了最大值，返回错误
     if (nr_process >= MAX_PROCESS) {
         goto fork_out;
     }
@@ -292,13 +331,34 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
      */
 
     //    1. call alloc_proc to allocate a proc_struct
-    //    2. call setup_kstack to allocate a kernel stack for child process
-    //    3. call copy_mm to dup OR share mm according clone_flag
-    //    4. call copy_thread to setup tf & context in proc_struct
-    //    5. insert proc_struct into hash_list && proc_list
-    //    6. call wakeup_proc to make the new child process RUNNABLE
-    //    7. set ret vaule using child proc's pid
+    if((proc = alloc_proc()) == NULL){
+        goto fork_out;
+    }
 
+    //    2. call setup_kstack to allocate a kernel stack for child process
+    if(setup_kstack(proc) != 0){
+        goto bad_fork_cleanup_proc;  // 释放刚刚alloc的proc_struct
+    }
+
+    //    3. call copy_mm to dup OR share mm according clone_flag
+    if(copy_mm(clone_flags, proc) != 0){
+        goto bad_fork_cleanup_kstack;  // 释放刚刚setup的kstack
+    }
+
+    //    4. call copy_thread to setup tf & context in proc_struct
+    copy_thread(proc, stack, tf);  // 复制trapframe，设置context
+
+    //    5. insert proc_struct into hash_list && proc_list
+    proc->pid = get_pid();
+    hash_proc(proc);  // 插入hash_list
+    list_add(&proc_list, &(proc->list_link));  // 插入proc_list
+    nr_process ++;
+
+    //    6. call wakeup_proc to make the new child process RUNNABLE
+    wakeup_proc(proc);  // 设置为RUNNABLE ？没找见函数啊
+
+    //    7. set ret vaule using child proc's pid
+    return proc->pid;
     
 
 fork_out:
@@ -335,20 +395,24 @@ void
 proc_init(void) {
     int i;
 
+    // 初始化进程链表
     list_init(&proc_list);
     for (i = 0; i < HASH_LIST_SIZE; i ++) {
         list_init(hash_list + i);
     }
 
+    // 通过kmalloc获得proc_struct结构的一块内存块
     if ((idleproc = alloc_proc()) == NULL) {
         panic("cannot alloc idleproc.\n");
     }
 
     // check the proc structure
+    // 这相当于把alloc_proc要干啥告诉我了嘛
     int *context_mem = (int*) kmalloc(sizeof(struct context));
     memset(context_mem, 0, sizeof(struct context));
     int context_init_flag = memcmp(&(idleproc->context), context_mem, sizeof(struct context));
 
+    // 干啥呢？检查name初始化对不对
     int *proc_name_mem = (int*) kmalloc(PROC_NAME_LEN);
     memset(proc_name_mem, 0, PROC_NAME_LEN);
     int proc_name_flag = memcmp(&(idleproc->name), proc_name_mem, PROC_NAME_LEN);
@@ -362,15 +426,17 @@ proc_init(void) {
 
     }
     
+    // 进一步初始化idleproc
     idleproc->pid = 0;
     idleproc->state = PROC_RUNNABLE;
-    idleproc->kstack = (uintptr_t)bootstack;
+    idleproc->kstack = (uintptr_t)bootstack;  // 以后的其他线程的内核栈都需要通过分配获得
     idleproc->need_resched = 1;
     set_proc_name(idleproc, "idle");
     nr_process ++;
 
     current = idleproc;
 
+    // 创建第二个内核线程init
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0) {
         panic("create init_main failed.\n");
@@ -384,6 +450,7 @@ proc_init(void) {
 }
 
 // cpu_idle - at the end of kern_init, the first kernel thread idleproc will do below works
+// 不停地查询，看是否有其他内核线程可以执行了，如果有，马上让调度器选择那个内核线程执行
 void
 cpu_idle(void) {
     while (1) {

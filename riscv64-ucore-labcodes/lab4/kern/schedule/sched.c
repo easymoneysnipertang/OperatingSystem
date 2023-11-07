@@ -17,7 +17,9 @@ schedule(void) {
     struct proc_struct *next = NULL;
     local_intr_save(intr_flag);
     {
+        // 设置当前内核线程 current->need_resched 为 0
         current->need_resched = 0;
+        // 在proc_list队列中查找下一个处于“就绪”态的线程或进程next
         last = (current == idleproc) ? &proc_list : &(current->list_link);
         le = last;
         do {
@@ -32,6 +34,7 @@ schedule(void) {
             next = idleproc;
         }
         next->runs ++;
+        // 调用proc_run函数，保存current的进程上下文，恢复新进程的执行现场，完成进程切换
         if (next != current) {
             proc_run(next);
         }

@@ -321,6 +321,7 @@ int
 do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     int ret = -E_INVAL;
     //try to find a vma which include addr
+    // 找到地址所在的虚拟内存区域，检查虚拟地址是否合法
     struct vma_struct *vma = find_vma(mm, addr);
 
     pgfault_num++;
@@ -338,26 +339,25 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
      */
     uint32_t perm = PTE_U;
     if (vma->vm_flags & VM_WRITE) {
-        perm |= READ_WRITE;
+        perm |= (PTE_R | PTE_W);
     }
     addr = ROUNDDOWN(addr, PGSIZE);
 
     ret = -E_NO_MEM;
 
     pte_t *ptep=NULL;
-  
-    // try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
-    // (notice the 3th parameter '1')
-    if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
-        cprintf("get_pte in do_pgfault failed\n");
-        goto failed;
-    }
-    if (*ptep == 0) { // if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+
+
+    // 从mm->pgdir中获取addr对应的页表项 
+    ptep = get_pte(mm->pgdir, addr, 1);  //(1) try to find a pte, if pte's
+                                         //PT(Page Table) isn't existed, then
+                                         //create a PT.
+    if (*ptep == 0) {  // 页表项内容为0，之前并不存在映射关系，创建
         if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
             cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
-    } else {
+    } else {  // pte并不是0，之前存在，只是被交换到了交换区，需要将其换回来
         /*LAB3 EXERCISE 3: YOUR CODE
         * 请你根据以下信息提示，补充函数
         * 现在我们认为pte是一个交换条目，那我们应该从磁盘加载数据并放到带有phy addr的页面，
@@ -371,16 +371,28 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         *    swap_map_swappable ： 设置页面可交换
         */
         if (swap_init_ok) {
+            // 给未被映射的地址映射上物理页
             struct Page *page = NULL;
-            // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
+            
             //(1）According to the mm AND addr, try
             //to load the content of right disk page
             //into the memory which page managed.
+            // 根据addr将磁盘页的内容读入内存页，page是新开辟的内存页，将磁盘页的内容读入这个内存页
+            if((ret = swap_in(mm, addr, &page)) != 0) {
+                cprintf("swap_in in do_pgfault failed\n");
+                goto failed;
+            }
+
             //(2) According to the mm,
             //addr AND page, setup the
             //map of phy addr <--->
             //logical addr
+            // 建立一个Page与pgdir的页表项的映射
+            page_insert(mm->pgdir, page, addr, perm);
+            
             //(3) make the page swappable.
+            // 设置页面可交换
+            swap_map_swappable(mm, addr, page, 1);
             page->pra_vaddr = addr;
         } else {
             cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
