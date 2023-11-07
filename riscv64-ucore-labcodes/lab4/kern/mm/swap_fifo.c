@@ -95,6 +95,7 @@ _fifo_check_swap(void) {
     *(unsigned char *)0x2000 = 0x0b;
     assert(pgfault_num==5);
     cprintf("write Virt Page a in fifo_check_swap\n");
+    cprintf("here\n\n\n");
     *(unsigned char *)0x1000 = 0x0a;
     assert(pgfault_num==6);
     cprintf("write Virt Page b in fifo_check_swap\n");

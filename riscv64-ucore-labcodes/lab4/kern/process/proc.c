@@ -65,7 +65,7 @@ list_entry_t proc_list;
 #define HASH_LIST_SIZE      (1 << HASH_SHIFT)
 #define pid_hashfn(x)       (hash32(x, HASH_SHIFT))
 
-// has list for process set based on pid
+// hash list for process set based on pid
 static list_entry_t hash_list[HASH_LIST_SIZE];
 
 // idle proc
@@ -110,7 +110,7 @@ alloc_proc(void) {
     // 设置runs，运行次数为0
     proc->runs = 0;
     // 设置kstack为NULL
-    proc->kstack = NULL;
+    proc->kstack = 0;
     // 设置need_resched为0
     proc->need_resched = 0;
     // 设置parent为当前进程，idle进程是没有父进程的，将会是NULL
@@ -174,6 +174,7 @@ get_pid(void) {
                 }
             }
             else if (proc->pid > last_pid && next_safe > proc->pid) {
+                // 这是last_pid已经被上面的分支置为1的情况no，是为了找到大于当前进程的最小pid
                 next_safe = proc->pid;
             }
         }
@@ -195,7 +196,16 @@ proc_run(struct proc_struct *proc) {
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
-       
+
+        bool intr_flag;
+        local_intr_save(intr_flag);
+        {
+            struct proc_struct* present_proc = current;
+            current = proc;
+            lcr3(proc->cr3);
+            switch_to(&present_proc->context, &proc->context);
+        }
+        local_intr_restore(intr_flag);
     }
 }
 
@@ -282,11 +292,11 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
-    *(proc->tf) = *tf;
+    *(proc->tf) = *tf; // 深拷贝，在这以前已经分配了空间
 
     // Set a0 to 0 so a child process knows it's just forked
-    proc->tf->gpr.a0 = 0;
-    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
+    proc->tf->gpr.a0 = 0; // 联想真实的fork，主进程返回1，子进程返回0
+    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp; //esp为0，是为了复制一个内核线程，所以直接用
 
     proc->context.ra = (uintptr_t)forkret;
     proc->context.sp = (uintptr_t)(proc->tf);
@@ -324,14 +334,41 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
      */
 
     //    1. call alloc_proc to allocate a proc_struct
-    //    2. call setup_kstack to allocate a kernel stack for child process
-    //    3. call copy_mm to dup OR share mm according clone_flag
-    //    4. call copy_thread to setup tf & context in proc_struct
-    //    5. insert proc_struct into hash_list && proc_list
-    //    6. call wakeup_proc to make the new child process RUNNABLE
-    //    7. set ret vaule using child proc's pid
+    if ((proc = alloc_proc()) == NULL)
+    {
+        // 分配进程失败
+        goto bad_fork_cleanup_proc;
+    }
+    proc->parent = current;
 
+    //    2. call setup_kstack to allocate a kernel stack for child process
+    if (setup_kstack(proc))
+    {
+        // 分配栈失败
+        goto bad_fork_cleanup_proc;
+    }
     
+    //    3. call copy_mm to dup OR share mm according clone_flag
+    if (copy_mm(clone_flags, proc))
+    {
+        goto bad_fork_cleanup_kstack;
+    }
+
+    //    4. call copy_thread to **setup tf & context** in proc_struct
+    copy_thread(proc, stack, tf);
+
+    //    5. insert proc_struct into hash_list && proc_list
+    proc->pid = get_pid();
+    hash_proc(proc);
+    list_add_before(&proc_list, &(proc->list_link));//连在最后
+    nr_process ++;
+
+    //    6. call wakeup_proc to make the new child process RUNNABLE
+    wakeup_proc(proc);
+
+    //    7. set ret vaule using child proc's pid
+    ret = proc->pid;
+
 
 fork_out:
     return ret;

@@ -18,6 +18,7 @@ schedule(void) {
     local_intr_save(intr_flag);
     {
         current->need_resched = 0;
+        // 如果是idle线程就从斗开始查，因为idle是不在表里面的
         last = (current == idleproc) ? &proc_list : &(current->list_link);
         le = last;
         do {
