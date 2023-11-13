@@ -157,9 +157,9 @@ get_pid(void) {
         while ((le = list_next(le)) != list) {
             proc = le2proc(le, list_link);
             if (proc->pid == last_pid) {
-                // pid == last_pid的进程已经存在，last_pid++
+                // 让last顺延到一个空缺位置
                 if (++ last_pid >= next_safe) {
-                    
+                    // 顺延到的位置不安全，有人占用了，保留last_pid，重头再来
                     if (last_pid >= MAX_PID) {
                         last_pid = 1;
                     }
@@ -168,7 +168,7 @@ get_pid(void) {
                 }
             }
             else if (proc->pid > last_pid && next_safe > proc->pid) {
-                // 有一个pid比last_pid大，且比next_safe小，那么就把next_safe设置为这个pid
+                // 比last大的最小的procid
                 next_safe = proc->pid;
             }
         }
@@ -200,7 +200,7 @@ proc_run(struct proc_struct *proc) {
             current = proc;
             // 切换页表
             lcr3(proc->cr3);
-            // 切换上下文
+            // 切换上下文，只切换context，不使用tf
             switch_to(&(prev->context), &(proc->context));
         }
         local_intr_restore(intr_flag);
@@ -242,13 +242,13 @@ find_proc(int pid) {
 //       proc->tf in do_fork-->copy_thread function
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
-    // 对trameframe/中断帧，也就是程序的一些上下文进行一些初始化？
+    // 对trameframe/中断帧，进行一些初始化
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
     // 设置内核线程要执行的函数指针及参数
     tf.gpr.s0 = (uintptr_t)fn;  // 函数指针
     tf.gpr.s1 = (uintptr_t)arg;  // 函数参数
-    // 设置SSTATUS寄存器：supervisor，启用中断，关闭中断
+    // 设置SSTATUS寄存器：supervisor，启用中断(U)，关闭中断(S)
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
     // 设置入口点，会去调用fn
     tf.epc = (uintptr_t)kernel_thread_entry;
@@ -288,14 +288,14 @@ static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
     // 先分配出trapframe的空间
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
-    *(proc->tf) = *tf;
+    *(proc->tf) = *tf; 
 
     // Set a0 to 0 so a child process knows it's just forked
     proc->tf->gpr.a0 = 0;
     proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;  // ？
 
-    proc->context.ra = (uintptr_t)forkret;
-    proc->context.sp = (uintptr_t)(proc->tf);
+    proc->context.ra = (uintptr_t)forkret;  // switch_to后返回到forkret，forkret再去trapret
+    proc->context.sp = (uintptr_t)(proc->tf);  // switch_to将context的寄存器复原，但这里其实冗余了，因为forkret会传参给sp
 }
 
 /* do_fork -     parent process for a new child process
@@ -355,7 +355,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     nr_process ++;
 
     //    6. call wakeup_proc to make the new child process RUNNABLE
-    wakeup_proc(proc);  // 设置为RUNNABLE ？没找见函数啊
+    wakeup_proc(proc);  // 设置为RUNNABLE
 
     //    7. set ret vaule using child proc's pid
     return proc->pid;

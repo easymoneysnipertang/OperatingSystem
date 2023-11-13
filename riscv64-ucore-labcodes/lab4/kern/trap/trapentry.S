@@ -107,10 +107,13 @@ __alltraps:
 __trapret:
     RESTORE_ALL
     # go back from supervisor call
+    # sret，tf的epc里存kernel_thread_entry，去那调用fn
     sret
  
     .globl forkrets
 forkrets:
     # set stack to this new process's trapframe
+    # 从switch_to过来，因为设置了ra（copy_thread）
+    # 冗余传参，之前在copy_thread里设置了sp为tf，这里又传了一次
     move sp, a0
     j __trapret

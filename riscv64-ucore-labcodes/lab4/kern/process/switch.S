@@ -2,6 +2,7 @@
 
 .text
 # void switch_to(struct proc_struct* from, struct proc_struct* to)
+# 复原context里的寄存器，根据ra返回到forkret
 .globl switch_to
 switch_to:
     # save from's registers

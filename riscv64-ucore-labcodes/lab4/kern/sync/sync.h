@@ -6,8 +6,8 @@
 #include <riscv.h>
 
 static inline bool __intr_save(void) {
-    if (read_csr(sstatus) & SSTATUS_SIE) {
-        intr_disable();
+    if (read_csr(sstatus) & SSTATUS_SIE) {  // status告知可以响应中断
+        intr_disable();  // 禁用中断
         return 1;
     }
     return 0;
