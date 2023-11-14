@@ -81,7 +81,7 @@ struct trapframe {
     tf.epc = (uintptr_t)kernel_thread_entry;
 ```
 
-`forkret`函数会将`trapframe`放到栈顶，接着进入`trapret`函数。`trapret`进行一次`RESTORE_ALL`操作，把`trapframe`中的值恢复到CPU寄存器中。然后通过`epc`跳转到`kernel_thread_entry`函数，调用`s0`寄存器里保存的`fn`函数，至此就完成了中断，CPU接着在对应态下执行`fn`函数。
+`forkret`函数会将`trapframe`放到栈顶，接着进入`trapret`函数。`trapret`进行一次`RESTORE_ALL`操作，把`trapframe`中的值恢复到CPU寄存器中。然后通过`epc`跳转到`kernel_thread_entry`函数，调用`s0`寄存器里保存的`fn`函数，至此就**完成了中断恢复**，CPU接着在对应态下执行`fn`函数。
 
 
 ## 练习2：为新创建的内核线程分配资源
