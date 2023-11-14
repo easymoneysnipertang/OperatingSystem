@@ -423,7 +423,6 @@ proc_init(void) {
         && idleproc->mm == NULL && idleproc->flags == 0 && !proc_name_flag
     ){
         cprintf("alloc_proc() correct!\n");
-
     }
     
     // 进一步初始化idleproc
