@@ -245,10 +245,10 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
     // 对trameframe/中断帧，进行一些初始化
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
-    // 设置内核线程要执行的函数指针及参数
+    // 设置内核线程要执行的函数指针及参数 （其他寄存器初始化为0）
     tf.gpr.s0 = (uintptr_t)fn;  // 函数指针
     tf.gpr.s1 = (uintptr_t)arg;  // 函数参数
-    // 设置SSTATUS寄存器：supervisor，启用中断(U)，关闭中断(S)
+    // 设置SSTATUS寄存器：supervisor，启用中断(回到U态/中断结束)，关闭中断(S态下/中断时)
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
     // 设置入口点，会去调用fn
     tf.epc = (uintptr_t)kernel_thread_entry;
