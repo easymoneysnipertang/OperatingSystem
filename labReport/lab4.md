@@ -89,7 +89,64 @@ struct trapframe {
 ### ucore是否做到给每个新fork的线程一个唯一的id
 
 ## 练习3：编写proc_run函数
+编写的`proc_run`函数如下：
+```c
+void
+proc_run(struct proc_struct *proc) {
+    // 如果相同则不需要切换
+    if (proc != current) {
+        // 禁用中断
+        bool intr_flag;
+        struct proc_struct *prev = current;  // prev指向当前正在运行的进程
+        local_intr_save(intr_flag);
+        {
+            // 切换当前进程为要运行的进程
+            current = proc;
+            // 切换页表
+            lcr3(proc->cr3);
+            // 切换上下文，只切换context，不使用tf
+            switch_to(&(prev->context), &(proc->context));
+        }
+        local_intr_restore(intr_flag);
+
+    }
+}
+```
+首先需要判断要切换的进程是否正是当前运行的进程，如果是则不需要切换。  
+随后记录当前运行的进程，通过`local_intr_save`禁用中断，为切换上下文做准备。  
+接着将当前进程指针切换，再切换页表及上下文，即可运行新的进程。
 
 ### 在本实验的执行过程中，创建且运行了几个内核线程
 
+运行了两个内核线程：
+
+1. idle：这个内核线程的工作就是不停地查询，看是否有其他内核线程可以执行了，如果有，马上让调度器选择那个内核线程执行。在这个实验中，先启动idle，后设置init为runnable，便可以将运行权交给init进程。
+2. init：该内核线程的工作就是显示“Hello World”，表明自己存在且能正常工作了，表明初始化进程的工作成功了。
+
 ## Challenge
+
+查询到sync.h中，local_intr_save以及local_intr_restore的定义如下：
+```c
+static inline bool __intr_save(void) {
+    if (read_csr(sstatus) & SSTATUS_SIE) {
+        intr_disable();
+        return 1;
+    }
+    return 0;
+}
+
+static inline void __intr_restore(bool flag) {
+    if (flag) {
+        intr_enable();
+    }
+}
+
+#define local_intr_save(x)      do { x = __intr_save(); } while (0)
+#define local_intr_restore(x)   __intr_restore(x);
+```
+
+local_intr_save宏首先调用__intr_save()函数，这个函数会检查当前的中断状态（通过读取CSR寄存器的sstatus位）。如果中断是开启的（SSTATUS_SIE位为1），那么它会关闭中断（通过调用intr_disable()函数）并返回1；否则，它会返回0。这个返回值会被保存到intr_flag变量中。
+
+local_intr_restore宏检查flag参数。如果flag为1表明的是原本中断时开启状态，那么它会开启中断（通过调用intr_enable()函数）。
+
+所以，通过先调用local_intr_save，后调用local_intr_restore，从而在两者之间形成了临界区，临界区前保存中断位，临界区的代码在中断关闭的状态下运行，并在临界区代码执行完毕后恢复原来的中断状态。
