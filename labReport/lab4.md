@@ -7,6 +7,9 @@
   - [练习3：编写proc\_run函数](#练习3编写proc_run函数)
     - [在本实验的执行过程中，创建且运行了几个内核线程](#在本实验的执行过程中创建且运行了几个内核线程)
   - [Challenge](#challenge)
+  - [知识点分析](#知识点分析)
+    - [重要知识点](#重要知识点)
+    - [额外知识点](#额外知识点)
 
 ## 练习1：分配并初始化一个进程控制块
 `alloc_proc`函数负责分配并返回一个新的`struct proc_struct`结构，用于存储新建立的内核线程的管理信息。本次实验主要完善该函数对`proc_struct`结构体的初始化工作。  
@@ -86,7 +89,61 @@ struct trapframe {
 
 ## 练习2：为新创建的内核线程分配资源
 
+```C
+int 
+do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
+    int ret = -E_NO_FREE_PROC;
+    struct proc_struct *proc;
+    // 进程数目超过了最大值，返回错误
+    if (nr_process >= MAX_PROCESS) {
+        goto fork_out;
+    }
+    ret = -E_NO_MEM;
+    //1. call alloc_proc to allocate a proc_struct
+    if((proc = alloc_proc()) == NULL){
+        goto fork_out;
+    }
+
+    //2. call setup_kstack to allocate a kernel stack for child process
+    if(setup_kstack(proc) != 0){
+        goto bad_fork_cleanup_proc;  // 释放刚刚alloc的proc_struct
+    }
+
+    //3. call copy_mm to dup OR share mm according clone_flag
+    if(copy_mm(clone_flags, proc) != 0){
+        goto bad_fork_cleanup_kstack;  // 释放刚刚setup的kstack
+    }
+
+    //4. call copy_thread to setup tf & context in proc_struct
+    copy_thread(proc, stack, tf);  // 复制trapframe，设置context
+
+    //5. insert proc_struct into hash_list && proc_list
+    proc->pid = get_pid();
+    hash_proc(proc);  // 插入hash_list
+    list_add(&proc_list, &(proc->list_link));  // 插入proc_list
+    nr_process ++;
+
+    //6. call wakeup_proc to make the new child process RUNNABLE
+    wakeup_proc(proc);  // 设置为RUNNABLE
+
+    // 7. set ret vaule using child proc's pid
+    ret=proc->pid;
+
+fork_out:
+    return ret;
+bad_fork_cleanup_kstack:
+    put_kstack(proc);
+bad_fork_cleanup_proc:
+    kfree(proc);
+    goto fork_out;
+}
+```
+首先使用`alloc_proc`函数分配一个`proc_struct`结构体，然后使用`setup_kstack`函数为新进程分配内核栈，接着使用`copy_mm`函数复制父进程的内存管理信息，然后使用`copy_thread`函数复制父进程的`trapframe`，并设置`context`。最后使用`get_pid`函数为新进程分配一个唯一的进程号，将新进程插入到进程列表和哈希表中，并设置为`RUNNABLE`状态，返回新进程的进程号。
+
 ### ucore是否做到给每个新fork的线程一个唯一的id
+ucore使用`get_pid`函数为新进程分配一个唯一的进程号。在其中使用了两个静态变量`last_pid`和`next_safe`。
+`last_pid`用于记录上一个进程的进程号，`next_safe`用于维护最小的一个不可用进程号。
+每一次进入`get_pid`后，可以直接从(`last_pid`,`next_safe`)这个开区间中直接获得一个可用的进程号，也就是`last_pid+1`，直到这个区间中不存在进程号，也就是`last_pid+1==next_safe`。此时，不断地在整个进程号空间中循环寻找可用进程号，直到找到一个可用的进程号，然后更新`last_pid`和`next_safe`，返回这个可用的进程号。
 
 ## 练习3：编写proc_run函数
 编写的`proc_run`函数如下：
