@@ -49,7 +49,7 @@ alloc_proc(void) {
 ```
 
 ### proc_struct中context和trapframe成员变量含义及作用
-`context`保存了`ra`、`sp`、`s0-s11`共十四个寄存器。这些只是`caller-saved`寄存器，而`callee-saved`寄存器在调用`switch_to`函数时，由编译器自动帮助保存。  
+`context`保存了`ra`、`sp`、`s0-s11`共十四个寄存器。这些只是`callee-saved`寄存器，而`caller-saved`寄存器在调用`switch_to`函数时，由编译器自动帮助保存。  
 本次实验中，`context`的作用是保存`forkret`函数的返回地址，以及`forkret`函数的参数`struct trapframe`。  
 在`copy_thread`函数里，有如下代码：
 ```c
