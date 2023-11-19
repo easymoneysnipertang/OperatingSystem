@@ -242,7 +242,7 @@ find_proc(int pid) {
 //       proc->tf in do_fork-->copy_thread function
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
-    // 对trameframe/中断帧，进行一些初始化
+    // 创建内核进程。对trameframe/中断帧，进行一些初始化
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
     // 设置内核线程要执行的函数指针及参数 （其他寄存器初始化为0）
@@ -292,7 +292,8 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
 
     // Set a0 to 0 so a child process knows it's just forked
     proc->tf->gpr.a0 = 0;
-    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;  // ？
+    // esp传的是stack，如果为0，意味着创建内核线程。否则是父进程的esp（用户栈）
+    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
 
     proc->context.ra = (uintptr_t)forkret;  // switch_to后返回到forkret，forkret再去trapret
     proc->context.sp = (uintptr_t)(proc->tf);  // switch_to将context的寄存器复原，但这里其实冗余了，因为forkret会传参给sp
