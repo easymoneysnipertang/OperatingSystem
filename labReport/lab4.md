@@ -143,7 +143,7 @@ bad_fork_cleanup_proc:
 ### ucore是否做到给每个新fork的线程一个唯一的id
 ucore使用`get_pid`函数为新进程分配一个唯一的进程号。在其中使用了两个静态变量`last_pid`和`next_safe`。
 `last_pid`用于记录上一个进程的进程号，`next_safe`用于维护最小的一个不可用进程号。
-每一次进入`get_pid`后，可以直接从(`last_pid`,`next_safe`)这个开区间中直接获得一个可用的进程号，也就是`last_pid+1`，直到这个区间中不存在进程号，也就是`last_pid+1==next_safe`。此时，在整个进程号空间中循环寻找最小可用的进程号，next_safe为大于last_pid的最小不可用进程号。
+每一次进入`get_pid`后，可以直接从(`last_pid`,`next_safe`)这个开区间中直接获得一个可用的进程号，也就是`last_pid+1`，直到这个区间中不存在进程号，也就是`last_pid+1==next_safe`。此时，通过遍历进程链表，在整个进程号空间中寻找最小可用的进程号，将`last_pid`更新为该进程号，在循环进程链表的同时将`next_safe`更新为大于`last_pid`的最小不可用进程号，从而方便下一次获取进程号，最后返回`last_pid`。
 
 ## 练习3：编写proc_run函数
 编写的`proc_run`函数如下：
