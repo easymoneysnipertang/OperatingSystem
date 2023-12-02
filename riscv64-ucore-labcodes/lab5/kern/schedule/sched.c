@@ -29,7 +29,7 @@ schedule(void) {
     local_intr_save(intr_flag);
     {
         current->need_resched = 0;
-        last = (current == idleproc) ? &proc_list : &(current->list_link);
+        last = (current == idleproc) ? &proc_list : &(current->list_link); // idleproc是不在进程列表里的
         le = last;
         do {
             if ((le = list_next(le)) != &proc_list) {

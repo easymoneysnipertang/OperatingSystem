@@ -230,7 +230,7 @@ proc_run(struct proc_struct *proc) {
             // 切换页表
             lcr3(proc->cr3);
             // 切换上下文，只切换context，不使用tf
-            switch_to(&(prev->context), &(proc->context));
+            switch_to(&(prev->context), &(proc->context)); // prev.ra <- 返回值，转移到forkret
         }
         local_intr_restore(intr_flag);
 
@@ -289,7 +289,7 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
 // setup_kstack - alloc pages with size KSTACKPAGE as process kernel stack
 static int
 setup_kstack(struct proc_struct *proc) {
-    struct Page *page = alloc_pages(KSTACKPAGE);
+    struct Page *page = alloc_pages(KSTACKPAGE); // problem为什么分配出来就是在内核里面的页
     if (page != NULL) {
         proc->kstack = (uintptr_t)page2kva(page);
         return 0;
@@ -535,7 +535,7 @@ do_exit(int error_code) {
         }
     }
     local_intr_restore(intr_flag);
-    schedule();
+    schedule();     // 这个进程被杀了，让其他进程跑，因为
     panic("do_exit will not return!! %d.\n", current->pid);
 }
 
@@ -766,7 +766,7 @@ do_wait(int pid, int *code_store) {
     bool intr_flag, haskid;
 repeat:
     haskid = 0;
-    if (pid != 0) {
+    if (pid != 0) { // 有pid，就直接通过哈希找到
         proc = find_proc(pid);
         if (proc != NULL && proc->parent == current) {
             haskid = 1;
@@ -775,7 +775,7 @@ repeat:
             }
         }
     }
-    else {
+    else { // 没有pid，就在当前进程子进程中找
         proc = current->cptr;
         for (; proc != NULL; proc = proc->optr) {
             haskid = 1;
@@ -784,7 +784,7 @@ repeat:
             }
         }
     }
-    if (haskid) {
+    if (haskid) { // 只要当前进程还有子进程，那就要等这个子进程
         current->state = PROC_SLEEPING;
         current->wait_state = WT_CHILD;
         schedule();
@@ -793,9 +793,9 @@ repeat:
         }
         goto repeat;
     }
-    return -E_BAD_PROC;
+    return -E_BAD_PROC; // 已经没有子进程了，也就是所有的子进程都已经退出了，那就返回一个错误消息
 
-found:
+found:  // 如果有僵尸子进程，释放它的资源
     if (proc == idleproc || proc == initproc) {
         panic("wait idleproc or initproc.\n");
     }

@@ -23,7 +23,7 @@ PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
 
 Special kernel symbols:
   entry  0xc0200036 (virtual)
-  etext  0xc0206636 (virtual)
+  etext  0xc0206624 (virtual)
   edata  0xc02a1148 (virtual)
   end    0xc02ac6d0 (virtual)
 Kernel executable memory footprint: 690KB
@@ -100,6 +100,6 @@ kernel_execve: pid = 2, name = "softint".
 Breakpoint
 all user-mode processes have quit.
 init check memory pass.
-kernel panic at kern/process/proc.c:486:
+kernel panic at kern/process/proc.c:485:
     initproc exit.
 

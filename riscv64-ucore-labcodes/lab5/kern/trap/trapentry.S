@@ -14,7 +14,7 @@
 
 _restore_kernel_sp:
     csrr sp, sscratch
-_save_context:
+_save_context: # 保存了一波中断帧
     addi sp, sp, -36 * REGBYTES
     # save x registers
     STORE x0, 0*REGBYTES(sp)
