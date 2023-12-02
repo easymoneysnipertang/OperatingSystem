@@ -448,8 +448,7 @@ do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
         *    swap_map_swappable ： 设置页面可交换
         */
         if (swap_init_ok) {
-            struct Page *page = NULL;
-                        // 给未被映射的地址映射上物理页
+            // 给未被映射的地址映射上物理页
             struct Page *page = NULL;
             // 根据addr将磁盘页的内容读入内存页，page是新开辟的内存页，将磁盘页的内容读入这个内存页
             if((ret = swap_in(mm, addr, &page)) != 0) {
