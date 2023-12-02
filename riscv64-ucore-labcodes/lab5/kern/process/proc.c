@@ -683,8 +683,8 @@ load_icode(unsigned char *binary, size_t size) {
      *          hint: check meaning of SPP, SPIE in SSTATUS, use them by SSTATUS_SPP, SSTATUS_SPIE(defined in risv.h)
      */
     tf->gpr.sp = USTACKTOP;  // 用户栈顶
-    tf->epc = elf->e_entry;  // 用户程序入口?
-    tf->status = (read_csr(sstatus) & ~SSTATUS_SPP) | SSTATUS_SPIE | SSTATUS_SIE;  // 用户态，开中断
+    tf->epc = elf->e_entry;  // 用户程序入口
+    tf->status = (read_csr(sstatus) & ~SSTATUS_SPP & ~SSTATUS_SPIE);  // 用户态
 
     ret = 0;
 out:
