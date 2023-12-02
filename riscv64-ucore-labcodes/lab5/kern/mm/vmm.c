@@ -449,15 +449,17 @@ do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
         */
         if (swap_init_ok) {
             struct Page *page = NULL;
-            // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
-            //(1）According to the mm AND addr, try
-            //to load the content of right disk page
-            //into the memory which page managed.
-            //(2) According to the mm,
-            //addr AND page, setup the
-            //map of phy addr <--->
-            //logical addr
-            //(3) make the page swappable.
+                        // 给未被映射的地址映射上物理页
+            struct Page *page = NULL;
+            // 根据addr将磁盘页的内容读入内存页，page是新开辟的内存页，将磁盘页的内容读入这个内存页
+            if((ret = swap_in(mm, addr, &page)) != 0) {
+                cprintf("swap_in in do_pgfault failed\n");
+                goto failed;
+            }
+            // 建立一个Page与pgdir的页表项的映射
+            page_insert(mm->pgdir, page, addr, perm);
+            // 设置页面可交换
+            swap_map_swappable(mm, addr, page, 1);
             page->pra_vaddr = addr;
         } else {
             cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
@@ -471,6 +473,7 @@ failed:
 
 bool
 user_mem_check(struct mm_struct *mm, uintptr_t addr, size_t len, bool write) {
+    // 检查从addr开始，长度为len的内存空间是否可以被用户访问
     if (mm != NULL) {
         if (!USER_ACCESS(addr, addr + len)) {
             return 0;

@@ -6,6 +6,7 @@
 #include <pmm.h>
 #include <assert.h>
 
+// 进一步转发syscall到proc.c去
 static int
 sys_exit(uint64_t arg[]) {
     int error_code = (int)arg[0];
@@ -82,9 +83,10 @@ void
 syscall(void) {
     struct trapframe *tf = current->tf;
     uint64_t arg[5];
-    int num = tf->gpr.a0;
-    if (num >= 0 && num < NUM_SYSCALLS) {
+    int num = tf->gpr.a0;  // a0寄存器存放系统调用号
+    if (num >= 0 && num < NUM_SYSCALLS) {  // 防止数组越界
         if (syscalls[num] != NULL) {
+            // 取出系统调用参数，转发给对于的系统调用函数处理
             arg[0] = tf->gpr.a1;
             arg[1] = tf->gpr.a2;
             arg[2] = tf->gpr.a3;

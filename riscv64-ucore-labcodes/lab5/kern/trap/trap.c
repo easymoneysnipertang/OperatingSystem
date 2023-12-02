@@ -190,8 +190,11 @@ void exception_handler(struct trapframe *tf) {
         case CAUSE_BREAKPOINT:
             cprintf("Breakpoint\n");
             if(tf->gpr.a7 == 10){
+                // 得知是内核态模拟的syscall
                 tf->epc += 4;
+                // 请求调用sys_exec
                 syscall();
+                // 回到系统正常执行
                 kernel_execve_ret(tf,current->kstack+KSTACKSIZE);
             }
             break;
@@ -217,7 +220,8 @@ void exception_handler(struct trapframe *tf) {
             break;
         case CAUSE_USER_ECALL:
             //cprintf("Environment call from U-mode\n");
-            tf->epc += 4;
+            // 处理用户态调用syscall
+            tf->epc += 4;  // 指向下一条指令
             syscall();
             break;
         case CAUSE_SUPERVISOR_ECALL:

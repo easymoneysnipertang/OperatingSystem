@@ -11,7 +11,7 @@ syscall(int64_t num, ...) {
     va_start(ap, num);
     uint64_t a[MAX_ARGS];
     int i, ret;
-    for (i = 0; i < MAX_ARGS; i ++) {
+    for (i = 0; i < MAX_ARGS; i ++) {  // 依次取出参数
         a[i] = va_arg(ap, uint64_t);
     }
     va_end(ap);

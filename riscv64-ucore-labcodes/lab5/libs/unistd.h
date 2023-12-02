@@ -3,6 +3,7 @@
 
 #define T_SYSCALL           0x80
 
+// 用户态内联汇编ecall调用，触发中断进入S态异常处理
 /* syscall number */
 #define SYS_exit            1
 #define SYS_fork            2
