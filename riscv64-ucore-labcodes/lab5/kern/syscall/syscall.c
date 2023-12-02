@@ -64,6 +64,15 @@ sys_pgdir(uint64_t arg[]) {
     return 0;
 }
 
+// 制定初始化器
+/*
+int array[100] = {
+    [1] = 10,
+    [50] = 20,
+};
+
+这样，array[1] 的值就是10，array[50] 的值就是20，其他的元素都是0。
+*/
 static int (*syscalls[])(uint64_t arg[]) = {
     [SYS_exit]              sys_exit,
     [SYS_fork]              sys_fork,

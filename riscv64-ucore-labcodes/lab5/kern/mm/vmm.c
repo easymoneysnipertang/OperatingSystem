@@ -159,6 +159,7 @@ mm_destroy(struct mm_struct *mm) {
 int
 mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
        struct vma_struct **vma_store) {
+    // 全是对齐到page的
     uintptr_t start = ROUNDDOWN(addr, PGSIZE), end = ROUNDUP(addr + len, PGSIZE);
     if (!USER_ACCESS(start, end)) {
         return -E_INVAL;
@@ -169,7 +170,7 @@ mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
     int ret = -E_INVAL;
 
     struct vma_struct *vma;
-    if ((vma = find_vma(mm, start)) != NULL && end > vma->vm_start) {
+    if ((vma = find_vma(mm, start)) != NULL && end > vma->vm_start) {   //如果已经有冲突的vma说明虚拟地址已经被分配出去了
         goto out;
     }
     ret = -E_NO_MEM;

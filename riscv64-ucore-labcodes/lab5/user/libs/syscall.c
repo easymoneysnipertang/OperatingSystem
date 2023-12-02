@@ -5,6 +5,7 @@
 
 #define MAX_ARGS            5
 
+// user 可调用的函数
 static inline int
 syscall(int64_t num, ...) {
     va_list ap;
@@ -16,6 +17,7 @@ syscall(int64_t num, ...) {
     }
     va_end(ap);
 
+    // 进入中断帧，通过中断帧传递参数
     asm volatile (
         "ld a0, %1\n"
         "ld a1, %2\n"

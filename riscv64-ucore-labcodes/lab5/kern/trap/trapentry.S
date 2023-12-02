@@ -124,6 +124,7 @@ __alltraps:
 
     move  a0, sp
     jal trap
+    # trap 函数完毕就会返回到下面
     # sp should be the same as before "jal trap"
 
     .globl __trapret

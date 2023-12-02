@@ -42,7 +42,7 @@ idt_init(void) {
 
 /* trap_in_kernel - test if trap happened in kernel */
 bool trap_in_kernel(struct trapframe *tf) {
-    return (tf->status & SSTATUS_SPP) != 0;
+    return (tf->status & SSTATUS_SPP) != 0; // spp被置位说明中断前是内核模式
 }
 
 void
@@ -277,7 +277,7 @@ trap(struct trapframe *tf) {
         trap_dispatch(tf);
     } else {
         struct trapframe *otf = current->tf;
-        current->tf = tf;
+        current->tf = tf;   // 拿到进入前的中断帧，也就是中断前栈上的情况
 
         bool in_kernel = trap_in_kernel(tf);
 

@@ -206,6 +206,20 @@ proc_run(struct proc_struct *proc) {
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
+        // 禁用中断
+        bool intr_flag;
+        struct proc_struct *prev = current;  // prev指向当前正在运行的进程
+        local_intr_save(intr_flag);
+        {
+            // 切换当前进程为要运行的进程
+            current = proc;
+            // 切换页表
+            lcr3(proc->cr3);
+            // 切换上下文，只切换context，不使用tf
+            switch_to(&(prev->context), &(proc->context));
+        }
+        local_intr_restore(intr_flag);
+
 
     }
 }
@@ -284,7 +298,7 @@ setup_pgdir(struct mm_struct *mm) {
         return -E_NO_MEM;
     }
     pde_t *pgdir = page2kva(page);
-    memcpy(pgdir, boot_pgdir, PGSIZE);
+    memcpy(pgdir, boot_pgdir, PGSIZE);  // 设置内核虚拟空间
 
     mm->pgdir = pgdir;
     return 0;
@@ -388,12 +402,34 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
      */
 
     //    1. call alloc_proc to allocate a proc_struct
+    if((proc = alloc_proc()) == NULL){
+        goto fork_out;
+    }
+
     //    2. call setup_kstack to allocate a kernel stack for child process
+    if(setup_kstack(proc) != 0){
+        goto bad_fork_cleanup_proc;  // 释放刚刚alloc的proc_struct
+    }
+
     //    3. call copy_mm to dup OR share mm according clone_flag
+    if(copy_mm(clone_flags, proc) != 0){
+        goto bad_fork_cleanup_kstack;  // 释放刚刚setup的kstack
+    }
+
     //    4. call copy_thread to setup tf & context in proc_struct
+    copy_thread(proc, stack, tf);  // 复制trapframe，设置context
+
     //    5. insert proc_struct into hash_list && proc_list
+    proc->pid = get_pid();
+    hash_proc(proc);  // 插入hash_list
+    list_add(&proc_list, &(proc->list_link));  // 插入proc_list
+    nr_process ++;
+
     //    6. call wakeup_proc to make the new child process RUNNABLE
+    wakeup_proc(proc);  // 设置为RUNNABLE
+
     //    7. set ret vaule using child proc's pid
+    ret = proc->pid;
 
     //LAB5 YOUR CODE : (update LAB4 steps)
     //TIPS: you should modify your written code in lab4(step1 and step5), not add more code.
@@ -441,12 +477,12 @@ do_exit(int error_code) {
     bool intr_flag;
     struct proc_struct *proc;
     local_intr_save(intr_flag);
-    {
+    {   // 进程退出时，将所有子线程转交给initproc防止他们成为孤儿进程
         proc = current->parent;
         if (proc->wait_state == WT_CHILD) {
             wakeup_proc(proc);
         }
-        while (current->cptr != NULL) {
+        while (current->cptr != NULL) { // problem???
             proc = current->cptr;
             current->cptr = proc->optr;
     
@@ -515,7 +551,7 @@ load_icode(unsigned char *binary, size_t size) {
             // continue ;
         }
     //(3.5) call mm_map fun to setup the new vma ( ph->p_va, ph->p_memsz)
-        vm_flags = 0, perm = PTE_U | PTE_V;
+        vm_flags = 0, perm = PTE_U | PTE_V;     // vm_flags表示的是vma结构中的权限，perm是page的权限
         if (ph->p_flags & ELF_PF_X) vm_flags |= VM_EXEC;
         if (ph->p_flags & ELF_PF_W) vm_flags |= VM_WRITE;
         if (ph->p_flags & ELF_PF_R) vm_flags |= VM_READ;
@@ -541,7 +577,7 @@ load_icode(unsigned char *binary, size_t size) {
             }
             off = start - la, size = PGSIZE - off, la += PGSIZE;
             if (end < la) {
-                size -= la - end;
+                size -= la - end;   // 减去end以上page尾部以下的
             }
             memcpy(page2kva(page) + off, from, size);
             start += size, from += size;
@@ -602,7 +638,9 @@ load_icode(unsigned char *binary, size_t size) {
      *          tf->epc should be entry point of user program (the value of sepc)
      *          tf->status should be appropriate for user program (the value of sstatus)
      *          hint: check meaning of SPP, SPIE in SSTATUS, use them by SSTATUS_SPP, SSTATUS_SPIE(defined in risv.h)
-     */
+    **/
+    tf->status =  SSTATUS_SPIE;
+    // problem:sp在哪?
 
 
     ret = 0;
@@ -790,7 +828,7 @@ user_main(void *arg) {
 #ifdef TEST
     KERNEL_EXECVE2(TEST, TESTSTART, TESTSIZE);
 #else
-    KERNEL_EXECVE(exit);
+    KERNEL_EXECVE(exit);    // problem:这儿不是exit吗，不应该是hello吗
 #endif
     panic("user_main execve failed.\n");
 }
