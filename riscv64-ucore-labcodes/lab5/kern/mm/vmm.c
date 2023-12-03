@@ -169,7 +169,7 @@ mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
     int ret = -E_INVAL;
 
     struct vma_struct *vma;
-    if ((vma = find_vma(mm, start)) != NULL && end > vma->vm_start) {
+    if ((vma = find_vma(mm, start)) != NULL && end > vma->vm_start) { // 看有没有重叠的vma，有就不能分配
         goto out;
     }
     ret = -E_NO_MEM;
@@ -216,11 +216,11 @@ exit_mmap(struct mm_struct *mm) {
     list_entry_t *list = &(mm->mmap_list), *le = list;
     while ((le = list_next(le)) != list) {
         struct vma_struct *vma = le2vma(le, list_link);
-        unmap_range(pgdir, vma->vm_start, vma->vm_end);
+        unmap_range(pgdir, vma->vm_start, vma->vm_end); // 摘除映射地址的页表项，使之无效化
     }
     while ((le = list_next(le)) != list) {
         struct vma_struct *vma = le2vma(le, list_link);
-        exit_range(pgdir, vma->vm_start, vma->vm_end);
+        exit_range(pgdir, vma->vm_start, vma->vm_end);  // 摘除映射地址的页表，页目录表也就是实际的物理页
     }
 }
 

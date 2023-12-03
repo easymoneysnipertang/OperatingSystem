@@ -273,7 +273,7 @@ void unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
 
     do {
         pte_t *ptep = get_pte(pgdir, start, 0);
-        if (ptep == NULL) {
+        if (ptep == NULL) { // 为NULL说明PT中PTE为空了，由于start到end是连续的，直接到下个页表
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
             continue;
         }
