@@ -450,7 +450,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //nr_process ++;
 
     //    6. call wakeup_proc to make the new child process RUNNABLE
-    wakeup_proc(proc);  // 设置为RUNNABLE
+    wakeup_proc(proc);  // 设置为RUNNABLE!!
     //    7. set ret vaule using child proc's pid
     return proc->pid;
 
@@ -766,25 +766,25 @@ do_wait(int pid, int *code_store) {
     bool intr_flag, haskid;
 repeat:
     haskid = 0;
-    if (pid != 0) { // 有pid，就直接通过哈希找到
-        proc = find_proc(pid);
-        if (proc != NULL && proc->parent == current) {
+    if (pid != 0) {
+        proc = find_proc(pid);  // 找到指定pid的进程
+        if (proc != NULL && proc->parent == current) {  // 找到了且是当前进程的子进程
             haskid = 1;
-            if (proc->state == PROC_ZOMBIE) {
+            if (proc->state == PROC_ZOMBIE) {  // 子进程已经退出
                 goto found;
             }
         }
     }
-    else { // 没有pid，就在当前进程子进程中找
+    else {  // pid == 0，等待任意子进程退出
         proc = current->cptr;
-        for (; proc != NULL; proc = proc->optr) {
+        for (; proc != NULL; proc = proc->optr) {  // 遍历子进程链表
             haskid = 1;
             if (proc->state == PROC_ZOMBIE) {
                 goto found;
             }
         }
     }
-    if (haskid) { // 只要当前进程还有子进程，那就要等这个子进程
+    if (haskid) {  // 子进程还没退出，当前进程睡眠等待
         current->state = PROC_SLEEPING;
         current->wait_state = WT_CHILD;
         schedule();
@@ -803,11 +803,12 @@ found:  // 如果有僵尸子进程，释放它的资源
         *code_store = proc->exit_code;
     }
     local_intr_save(intr_flag);
-    {
+    {   // 回收子进程的资源
         unhash_proc(proc);
         remove_links(proc);
     }
     local_intr_restore(intr_flag);
+    // 释放子进程的内存空间
     put_kstack(proc);
     kfree(proc);
     return 0;
