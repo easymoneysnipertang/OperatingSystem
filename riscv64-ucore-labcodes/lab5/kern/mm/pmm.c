@@ -366,9 +366,9 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
             // get page from ptep
             struct Page *page = pte2page(*ptep);
             // alloc a page for process B
-            struct Page *npage = alloc_page();
+            //struct Page *npage = alloc_page();
             assert(page != NULL);
-            assert(npage != NULL);
+            //assert(npage != NULL);
             int ret = 0;
             /* LAB5:EXERCISE2 YOUR CODE
              * replicate content of page to npage, build the map of phy addr of
