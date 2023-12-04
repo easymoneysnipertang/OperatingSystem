@@ -1,6 +1,7 @@
 # lab5 <!-- omit in toc -->
 
 - [练习 1: 加载应用程序并执行](#练习-1-加载应用程序并执行)
+  - [请简要描述这个用户态进程被ucore选择占用CPU执行（RUNNING态）到具体执行应用程序第一条指令的整个经过。](#请简要描述这个用户态进程被ucore选择占用cpu执行running态到具体执行应用程序第一条指令的整个经过)
 - [练习 2: 父进程复制自己的内存空间给子进程](#练习-2-父进程复制自己的内存空间给子进程)
 - [练习 3: 分析fork/exec/wait/exit和系统调用的实现](#练习-3-分析forkexecwaitexit和系统调用的实现)
   - [函数分析](#函数分析)
@@ -12,6 +13,34 @@
 
 
 ## 练习 1: 加载应用程序并执行
+根据提示，设置应用进程的中断帧，使得进程后续能够正常返回用户态执行。具体的代码如下：
+```C
+    // 设置进程的中断帧，执行sret返回用户态，按系统调用路径原路返回：ebreak？
+    //(6) setup trapframe for user environment
+    struct trapframe *tf = current->tf;
+    // Keep sstatus
+    uintptr_t sstatus = tf->status;
+    memset(tf, 0, sizeof(struct trapframe));
+    /* LAB5:EXERCISE1 YOUR CODE
+     * should set tf->gpr.sp, tf->epc, tf->status
+     * NOTICE: If we set trapframe correctly, then the user level process can return to USER MODE from kernel. So
+     *          tf->gpr.sp should be user stack top (the value of sp)
+     *          tf->epc should be entry point of user program (the value of sepc)
+     *          tf->status should be appropriate for user program (the value of sstatus)
+     *          hint: check meaning of SPP, SPIE in SSTATUS, use them by SSTATUS_SPP, SSTATUS_SPIE(defined in risv.h)
+     */
+    tf->gpr.sp = USTACKTOP;  // 用户栈顶
+    tf->epc = elf->e_entry;  // 用户程序入口
+    tf->status = (read_csr(sstatus) & ~SSTATUS_SPP & ~SSTATUS_SPIE);  // 用户态
+```
+
+### 请简要描述这个用户态进程被ucore选择占用CPU执行（RUNNING态）到具体执行应用程序第一条指令的整个经过。
+1. 当init进程将用户进程创建完毕后，进入`do_wait`阶段。接着ucore会调度选择用户进程执行，进入`user_main`。  
+2. `user_main`调用`kernel_exe`，在内核态触发`ebreak`中断。目的是通过与`trap`协作，调用`sys_exec`，完成进程加载，并最后通过中断返回回到用户态。
+3. `sys_exec`调用`do_execve`：回收当前进程的内存空间，然后调用`load_icode`，根据elf文件的信息，将用户程序加载到内存中。
+4. 如实验指导手册所写，`load_icode`会执行一系列操作为用户进程建立能够运行的用户环境，报告建立`mm`、建立页目录表、分配各个段、设置用户栈、设置中断帧等。
+5. `load_icode`最后一步设置了用户栈，`epc`和`status`。中断处理完毕后，会通过`trapret`回到用户态，执行用户进程`entry_point`处的指令。
+
 
 ## 练习 2: 父进程复制自己的内存空间给子进程
 
