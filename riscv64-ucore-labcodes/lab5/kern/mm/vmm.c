@@ -201,7 +201,7 @@ dup_mmap(struct mm_struct *to, struct mm_struct *from) {
 
         insert_vma_struct(to, nvma);
 
-        bool share = 0;
+        bool share = 1;  // COW
         if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
             return -E_NO_MEM;
         }
@@ -434,7 +434,26 @@ do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
             cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
-    } else {
+    } 
+    // Copy on Write，发生写不可写页面错误时，tf->cause == 0xf
+    else if((*ptep & PTE_V) && (error_code == 0xf)) {
+        struct Page *page = pte2page(*ptep);
+        if(page_ref(page) == 1) {
+            // 该页面只有一个引用，直接修改权限
+            page_insert(mm->pgdir, page, addr, perm);
+        }
+        else {
+            // 该页面有多个引用，需要复制页面
+            struct Page *npage = alloc_page();
+            assert(npage != NULL);
+            memcpy(page2kva(npage), page2kva(page), PGSIZE);
+            if(page_insert(mm->pgdir, npage, addr, perm) != 0) {
+                cprintf("page_insert in do_pgfault failed\n");
+                goto failed;
+            }
+        }
+    }
+    else {
         /*LAB3 EXERCISE 3: YOUR CODE
         * 请你根据以下信息提示，补充函数
         * 现在我们认为pte是一个交换条目，那我们应该从磁盘加载数据并放到带有phy addr的页面，
