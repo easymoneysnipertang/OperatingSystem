@@ -3,6 +3,7 @@
 - [练习 1: 加载应用程序并执行](#练习-1-加载应用程序并执行)
   - [请简要描述这个用户态进程被ucore选择占用CPU执行（RUNNING态）到具体执行应用程序第一条指令的整个经过。](#请简要描述这个用户态进程被ucore选择占用cpu执行running态到具体执行应用程序第一条指令的整个经过)
 - [练习 2: 父进程复制自己的内存空间给子进程](#练习-2-父进程复制自己的内存空间给子进程)
+  - [如何设计实现 Copy on Write 机制？给出概要设计](#如何设计实现-copy-on-write-机制给出概要设计)
 - [练习 3: 分析fork/exec/wait/exit和系统调用的实现](#练习-3-分析forkexecwaitexit和系统调用的实现)
   - [函数分析](#函数分析)
   - [函数执行流程](#函数执行流程)
@@ -43,6 +44,42 @@
 
 
 ## 练习 2: 父进程复制自己的内存空间给子进程
+`do_fork`会调用`copy_range`完成将父进程的内存空间复制给子进程的工作。  
+需要补充的代码很简单，参照注释首先使用`page2kva`拿到两个page的虚拟地址，然后调用`memcpy`将父进程的内存空间复制给子进程，最后通过`page_insert`在子进程的页表中建立映射关系。
+
+```C
+    /* LAB5:EXERCISE2 YOUR CODE
+        * replicate content of page to npage, build the map of phy addr of
+        * nage with the linear addr start
+        *
+        * Some Useful MACROs and DEFINEs, you can use them in below
+        * implementation.
+        * MACROs or Functions:
+        *    page2kva(struct Page *page): return the kernel vritual addr of
+        * memory which page managed (SEE pmm.h)
+        *    page_insert: build the map of phy addr of an Page with the
+        * linear addr la
+        *    memcpy: typical memory copy function
+        *
+        * (1) find src_kvaddr: the kernel virtual address of page
+        * (2) find dst_kvaddr: the kernel virtual address of npage
+        * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
+        * (4) build the map of phy addr of  nage with the linear addr start
+        */
+    void* src_kvaddr = page2kva(page);
+    void* dst_kvaddr = page2kva(npage);
+    memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+    ret = page_insert(to, npage, start, perm);
+```
+
+### 如何设计实现 Copy on Write 机制？给出概要设计
+1. 要实现Copy on Write机制，在fork时，首先将父进程的内存空间设置为只读。  
+2. 接着让子进程共享父进程的内存空间，需要做的就是让子进程的虚拟地址映射到父进程的物理页。  
+3. 当进程修改共享页面时，ucore会触发`page_fault`中断，此时需要判断是否是写一个只读页面。  
+4. 如果是，则需要将页面复制一份，然后修改子进程的页表，建立新的映射关系，使得子进程的内存空间与父进程的内存空间分离。  
+5. 最后还需查看原来共享的物理页是否只有一个进程在使用，如果是，则恢复原来的读写权限。
+
+
 
 ## 练习 3: 分析fork/exec/wait/exit和系统调用的实现
 
