@@ -7,10 +7,13 @@
 - [练习 3: 分析fork/exec/wait/exit和系统调用的实现](#练习-3-分析forkexecwaitexit和系统调用的实现)
   - [函数分析](#函数分析)
   - [函数执行流程](#函数执行流程)
+  - [请给出 ucore 中一个用户态进程的执行状态生命周期图。](#请给出-ucore-中一个用户态进程的执行状态生命周期图)
 - [扩展练习 Challenge](#扩展练习-challenge)
   - [实现 Copy on Write （COW）机制](#实现-copy-on-write-cow机制)
-  - [用户程序是何时被预先加载到内存中的](#用户程序是何时被预先加载到内存中的)
-  - [与常用操作系统加载的区别与原因](#与常用操作系统加载的区别与原因)
+  - [用户程序是何时被预先加载到内存中的？与常用操作系统加载的区别，原因是什么？](#用户程序是何时被预先加载到内存中的与常用操作系统加载的区别原因是什么)
+- [知识点分析](#知识点分析)
+  - [重要知识点](#重要知识点)
+  - [额外知识点](#额外知识点)
 
 
 ## 练习 1: 加载应用程序并执行
@@ -206,6 +209,156 @@ do_execve首先回收自身所占用户空间：
 
 然后调用 load_icode，用新的程序覆盖内存空间，从而形成一个执行新程序的新进程，load_icode部分的分析可以参考练习一中的讲解。
 
+**sys_wait函数** 
+
+下面是具体的sys_wait函数：
+
+```c
+sys_wait(uint64_t arg[]) {
+    int pid = (int)arg[0];
+    int *store = (int *)arg[1];
+    return do_wait(pid, store);
+}
+```
+`sys_wait`函数用于进程等待指定的子进程的退出并回收其资源，通过传入的参数获得`pid`和`store`，`pid`为需要等待退出的子进程id，`store`为子进程的退出状态。最后将这两个参数传给`do_wait`函数，完成具体的等待工作。
+
+`do_wait`函数的具体实现如下,`do_wait`函数首先判断传入的参数是否合法，然后根据传入的`pid`来找到对应的子进程，若`pid=0`，则等待任意子进程退出。如果子进程已经退出，则回收其资源，否则将当前进程设置为睡眠状态，等待子进程退出，然后通过`schedule`函数调度其他进程执行。
+```c
+    struct mm_struct *mm = current->mm;
+    if (code_store != NULL) {
+        if (!user_mem_check(mm, (uintptr_t)code_store, sizeof(int), 1)) {
+            return -E_INVAL;
+        }
+    }
+    struct proc_struct *proc;
+    bool intr_flag, haskid;
+repeat:
+    haskid = 0;
+    if (pid != 0) {
+        proc = find_proc(pid);  // 找到指定pid的进程
+        if (proc != NULL && proc->parent == current) {  // 找到了且是当前进程的子进程
+            haskid = 1;
+            if (proc->state == PROC_ZOMBIE) {  // 子进程已经退出
+                goto found;
+            }
+        }
+    }
+    else {  // pid == 0，等待任意子进程退出
+        proc = current->cptr;
+        for (; proc != NULL; proc = proc->optr) {  // 遍历子进程链表
+            haskid = 1;
+            if (proc->state == PROC_ZOMBIE) {
+                goto found;
+            }
+        }
+    }
+    if (haskid) {  // 子进程还没退出，当前进程睡眠等待
+        current->state = PROC_SLEEPING;
+        current->wait_state = WT_CHILD;
+        schedule();
+        if (current->flags & PF_EXITING) {
+            do_exit(-E_KILLED);
+        }
+        goto repeat;
+    }
+```
+
+在`do_wait`函数中，通过子进程的`exit_code`获得其退出状态，然后保存到`code_store`中，释放的资源主要是子进程的内核栈和`proc_struct`。
+```c
+    if (code_store != NULL) {
+        *code_store = proc->exit_code;
+    }
+    local_intr_save(intr_flag);
+    {   // 回收子进程的资源
+        unhash_proc(proc);
+        remove_links(proc);
+    }
+    local_intr_restore(intr_flag);
+    // 释放子进程的内存空间
+    put_kstack(proc);
+    kfree(proc);
+```
+
+
+
+**sys_exit函数**  
+
+`sys_exit`函数的具体实现如下:
+```c
+static int
+sys_exit(uint64_t arg[]) {
+    int error_code = (int)arg[0];
+    return do_exit(error_code);
+}
+```
+`sys_exit`函数用于进程主动退出，通过传入的参数获得`error_code`，然后将这个参数传给`do_exit`函数完成退出，并将`error_code`保存到`proc->exit_code`，以便发送到父进程，让其得以获得该进程的退出状态。
+
+`do_exit`函数首先检查当前进程的内存管理结构`mm`，如果不为`NULL`，表示其为一个用户进程，接下来将页表设置为内核空间页表，表示在内核空间工作，然后判断`mm`的引用计数，若当前进程独占用户空间，则调用`exit_mmap`释放`mm`中的所有用户空间，然后调用`put_pgdir`释放页目录表，最后调用`mm_destroy`释放`mm`。接下来将当前进程的状态设置为`PROC_ZOMBIE`，表示该进程已经退出，然后遍历当前进程的子进程，将其插入到`initproc`的子进程链表中，如果子进程已经退出，则唤醒`initproc`来回收其资源。最后调用`schedule`函数，调度其他进程执行。
+```c
+int
+do_exit(int error_code) {
+    if (current == idleproc) {
+        panic("idleproc exit.\n");
+    }
+    if (current == initproc) {
+        panic("initproc exit.\n");
+    }
+    // 获取当前进程的内存管理结构
+    struct mm_struct *mm = current->mm;
+    if (mm != NULL) {  // 用户进程
+        // 设置页表为内核空间页表，接下来在内核空间执行
+        lcr3(boot_cr3);
+        // 判断 mm 的引用计数
+        if (mm_count_dec(mm) == 0) {
+            // 无其他进程共享，释放用户虚拟空间相关资源
+            exit_mmap(mm);
+            put_pgdir(mm);
+            mm_destroy(mm);
+        }
+        // 当前进程mm设置为NULL，资源释放
+        current->mm = NULL;
+    }
+    // 设置当前进程的状态为 PROC_ZOMBIE
+    current->state = PROC_ZOMBIE;
+    current->exit_code = error_code;
+    bool intr_flag;
+    struct proc_struct *proc;
+    local_intr_save(intr_flag);
+    {
+        // 得到父进程
+        proc = current->parent;
+        if (proc->wait_state == WT_CHILD) {
+            // 唤醒父进程
+            wakeup_proc(proc);
+        }
+        // 遍历当前进程的子进程
+        while (current->cptr != NULL) {
+            // cptr指向youngest child，child之间通过older和younger维护
+            proc = current->cptr;  // 子进程proc
+            current->cptr = proc->optr;  // older sibling
+    
+            proc->yptr = NULL;
+            if ((proc->optr = initproc->cptr) != NULL) {  // 插入链表，是init的最young的
+                initproc->cptr->yptr = proc;
+            }
+            proc->parent = initproc;
+            initproc->cptr = proc;
+
+            // 如果子进程处于 PROC_ZOMBIE 状态，唤醒 init 进程来回收
+            if (proc->state == PROC_ZOMBIE) {
+                if (initproc->wait_state == WT_CHILD) {
+                    wakeup_proc(initproc);
+                }
+            }
+        }
+    }
+    local_intr_restore(intr_flag);
+    schedule();     // 这个进程被杀了，让其他进程跑，因为
+    panic("do_exit will not return!! %d.\n", current->pid);
+}
+```   
+
+
 ### 函数执行流程
 
 fork/exec/wait/exit 函数的实现都是借助user/libs/ulib.c中的库来实现的，以fork为例，其执行的流程如下：
@@ -316,10 +469,54 @@ syscall(void) {
 5. 调用kern/syscall/syscall.c中的syscall
 6. 通过num不同分配到具体的函数进行处理（kern/syscall/syscall.c中的sys_fork/sys_exec/sys_exit/sys_wait）
 
+### 请给出 ucore 中一个用户态进程的执行状态生命周期图。
+
+```
+  (alloc_proc)            (proc_init/wakeup_proc)
+---------------> PROC_UNINIT -----------------> PROC_RUNNABLE
+                                                    |
+                                                    |
+                                                    | (proc_run)
+                                                    |
+                 (do_wait/do_sleep/ try_free_pages) V    (do_exit)
+  PROC_SLEEPING <--------------------------------RUNNING------------->PROC_ZOMBIE
+        |                                           A
+        |                                           | 
+        |                                           |
+        |                                           |
+        +-------------------------------------------+
+                        (wakeup_proc)      
+```
+
+
 ## 扩展练习 Challenge
 
 ### 实现 Copy on Write （COW）机制
 
-### 用户程序是何时被预先加载到内存中的
+### 用户程序是何时被预先加载到内存中的？与常用操作系统加载的区别，原因是什么？
 
-### 与常用操作系统加载的区别与原因
+
+本次实验把用户准备的二进制程序编译到了内核镜像中，由于在本次实验中文件系统还没实现，于是想要执行一个编译好的二进制程序，就要将二进制程序和内核一同编译，把可执行程序链接到内核中，也就是在内存中创建了一个大空间，于是将这个文件以二进制形式保存在了这一片内存区域中。  
+
+常用操作系统是通过以下步骤来加载用户程序的：
+1. 操作系统根据路径找到对应的程序，检测程序的头部，找到代码段和数据段的位置，以及程序的入口点。
+2. 操作系统为程序分配内存空间，将程序的各个段加载到内存中，并进行地址重定位，使得程序能够正确地访问自己的数据和代码。
+3. 操作系统将执行权移交给程序的入口点，开始执行用户程序。
+
+常用操作系统是在用户程序需要执行时被加载到内存，而本次实验，用户程序是在内核启动时就被加载到内存中，原因在于文件系统尚未实现，无法将可执行文件从硬盘加载到内存。
+
+
+## 知识点分析
+### 重要知识点
+- 特权转换：在RISCV中，用户程序通过调用`syscall`函数，触发`ecall`中断，从而陷入到内核态，完成系统调用，通过`sret`指令返回用户态。
+
+- 应用程序加载：通过`sys_exec`系统调用，利用`load_icode`将用户程序加载到内存中，然后通过`trapret`函数返回用户态，执行用户程序。
+
+
+### 额外知识点
+
+本次实验只是创建了一个用户进程，对于用户进程间的同步和通信，以及多个进程为竞争资源死锁的问题。
+
+- 进程同步：进程同步是指多个进程之间按照一定的顺序执行，以确保数据的一致性和正确性。进程同步的方法互斥锁，信号量，临界区等方式，通过控制进程对共享资源的访问，从而实现进程同步。
+
+- 死锁：死锁是多个进程因竞争有限的系统资源而被永久阻塞的一种状态。当每个进程都持有一些资源并等待其他进程释放其资源时，就可能发生死锁。死锁的发生是由于进程之间的相互等待，导致它们都无法继续执行。死锁的常用的解决策略有：预防，避免，检测恢复，忽略。
