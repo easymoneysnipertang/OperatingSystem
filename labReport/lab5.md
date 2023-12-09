@@ -85,7 +85,6 @@
 5. 最后还需查看原来共享的物理页是否只有一个进程在使用，如果是，则恢复原来的读写权限。
 
 
-
 ## 练习 3: 分析fork/exec/wait/exit和系统调用的实现
 
 用户态程序的fork/exec/wait/exit系统调用到最后实际调用的是kern/syscall/syscall.c中的sys_fork/sys_exec/sys_exit/sys_wait，故下面首先对于这四个函数进行分析。
@@ -94,7 +93,7 @@
 
 **sys_fork函数**
 
-下面是具体的sys_fork函数：
+下面是具体的`sys_fork`函数：
 
 ```c
 static int
@@ -105,77 +104,16 @@ sys_fork(uint64_t arg[]) {
 }
 ```
 
-可见sys_fork函数将当前进程的中断帧以及中断帧中esp寄存器值作为参数传给do_fork，由do_fork完成具体的fork工作
+可见`sys_fork`函数将当前进程的中断帧以及中断帧中esp寄存器值作为参数传给`do_fork`，由`do_fork`完成具体的fork工作。
 
-do_fork的作用是，创建当前内核线程的一个副本，它们的执行上下文、代码、数据都一样，但是存
-储位置不同。实际需要”fork”的东西就是 stack 和 trapframe。在do_fork中给新内核线程分配资源，并且复制原进程的状态即可，具体的代码如下：
+`do_fork`的作用是创建当前内核线程的一个副本，它们的执行上下文、代码、数据都一样，但是存储位置不同。  
+实际需要”fork”的东西就是 stack 和 trapframe。在`do_fork`中给新内核线程分配资源，并且复制原进程的状态即可，具体的代码见`proc.c`。
 
-```c
-int
-do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
-    int ret = -E_NO_FREE_PROC;
-    struct proc_struct *proc;
-    if (nr_process >= MAX_PROCESS) {
-        goto fork_out;
-    }
-    ret = -E_NO_MEM;
-
-    //    1. call alloc_proc to allocate a proc_struct
-    if((proc = alloc_proc()) == NULL){
-        goto fork_out;
-    }
-
-    // set child proc's parent to current process
-    proc->parent = current;
-    // make sure current process's wait_state is 0
-    assert(current->wait_state == 0);
-
-    //    2. call setup_kstack to allocate a kernel stack for child process
-    if(setup_kstack(proc) != 0){
-        goto bad_fork_cleanup_proc;  // 释放刚刚alloc的proc_struct
-    }
-    //    3. call copy_mm to dup OR share mm according clone_flag
-    if(copy_mm(clone_flags, proc) != 0){
-        goto bad_fork_cleanup_kstack;  // 释放刚刚setup的kstack
-    }
-    //    4. call copy_thread to setup tf & context in proc_struct
-    copy_thread(proc, stack, tf);  // 复制trapframe，设置context
-
-    //    5. insert proc_struct into hash_list && proc_list
-    // insert proc_struct into hash_list && proc_list, set the relation links of process
-    bool intr_flag;
-    local_intr_save(intr_flag);
-    {
-        proc->pid = get_pid();
-        hash_proc(proc);  // 插入hash_list
-        set_links(proc);  // 设置进程间的关系
-    }
-    local_intr_restore(intr_flag)
-    // set_links里已经做了
-    //list_add(&proc_list, &(proc->list_link));  // 插入proc_list
-    //nr_process ++;
-
-    //    6. call wakeup_proc to make the new child process RUNNABLE
-    wakeup_proc(proc);  // 设置为RUNNABLE
-    //    7. set ret vaule using child proc's pid
-    ret = proc->pid;
- 
-fork_out:
-    return ret;
-
-bad_fork_cleanup_kstack:
-    put_kstack(proc);
-bad_fork_cleanup_proc:
-    kfree(proc);
-    goto fork_out;
-}
-```
-
-在第一步中加入了assert语句，确保当前进程不处于等待状态，在第五步中由于还要维护兄弟指针等变量，需要在插入hash list后调用set_links函数来设置这些指针。其他方面的实现上，与lab4中相同，此处不再赘述。
+本次实验在第一步中加入了assert语句，确保当前进程不处于等待状态，在第五步中由于还要维护兄弟指针等变量，需要在插入hash_list后调用set_links函数来设置这些指针。其他方面的实现上，与lab4中相同，此处不再赘述。
 
 **sys_exec函数**
 
-下面是具体的sys_exec函数：
+下面是具体的`sys_exec`函数：
 
 ```c
 static int
@@ -188,10 +126,10 @@ sys_exec(uint64_t arg[]) {
 }
 ```
 
-可见sys_fork函数从参数中得到进程名，名字长度，程序首地址以及程序的大小信息，将他们作为参数传给do_execve从而完成让程序执行另一个程序的操作。
+可见`sys_fork`函数从参数中得到进程名，名字长度，程序首地址以及程序的大小信息，将他们作为参数传给`do_execve`从而完成让程序执行另一个程序的操作。
 
 
-do_execve首先回收自身所占用户空间：
+`do_execve`首先判断自身如果是用户进程，就回收自身所占用户空间：
 ```c
     if (mm != NULL) {  // 用户进程
         cputs("mm != NULL");
@@ -209,7 +147,7 @@ do_execve首先回收自身所占用户空间：
     }
 ```
 
-然后调用 load_icode，用新的程序覆盖内存空间，从而形成一个执行新程序的新进程，load_icode部分的分析可以参考练习一中的讲解。
+然后调用`load_icode`，用新的程序覆盖内存空间，从而形成一个执行新程序的新进程，`load_icode`部分的分析可以参考练习一中的讲解。
 
 **sys_wait函数** 
 
@@ -295,70 +233,11 @@ sys_exit(uint64_t arg[]) {
 ```
 `sys_exit`函数用于进程主动退出，通过传入的参数获得`error_code`，然后将这个参数传给`do_exit`函数完成退出，并将`error_code`保存到`proc->exit_code`，以便发送到父进程，让其得以获得该进程的退出状态。
 
-`do_exit`函数首先检查当前进程的内存管理结构`mm`，如果不为`NULL`，表示其为一个用户进程，接下来将页表设置为内核空间页表，表示在内核空间工作，然后判断`mm`的引用计数，若当前进程独占用户空间，则调用`exit_mmap`释放`mm`中的所有用户空间，然后调用`put_pgdir`释放页目录表，最后调用`mm_destroy`释放`mm`。接下来将当前进程的状态设置为`PROC_ZOMBIE`，表示该进程已经退出，然后遍历当前进程的子进程，将其插入到`initproc`的子进程链表中，如果子进程已经退出，则唤醒`initproc`来回收其资源。最后调用`schedule`函数，调度其他进程执行。
-```c
-int
-do_exit(int error_code) {
-    if (current == idleproc) {
-        panic("idleproc exit.\n");
-    }
-    if (current == initproc) {
-        panic("initproc exit.\n");
-    }
-    // 获取当前进程的内存管理结构
-    struct mm_struct *mm = current->mm;
-    if (mm != NULL) {  // 用户进程
-        // 设置页表为内核空间页表，接下来在内核空间执行
-        lcr3(boot_cr3);
-        // 判断 mm 的引用计数
-        if (mm_count_dec(mm) == 0) {
-            // 无其他进程共享，释放用户虚拟空间相关资源
-            exit_mmap(mm);
-            put_pgdir(mm);
-            mm_destroy(mm);
-        }
-        // 当前进程mm设置为NULL，资源释放
-        current->mm = NULL;
-    }
-    // 设置当前进程的状态为 PROC_ZOMBIE
-    current->state = PROC_ZOMBIE;
-    current->exit_code = error_code;
-    bool intr_flag;
-    struct proc_struct *proc;
-    local_intr_save(intr_flag);
-    {
-        // 得到父进程
-        proc = current->parent;
-        if (proc->wait_state == WT_CHILD) {
-            // 唤醒父进程
-            wakeup_proc(proc);
-        }
-        // 遍历当前进程的子进程
-        while (current->cptr != NULL) {
-            // cptr指向youngest child，child之间通过older和younger维护
-            proc = current->cptr;  // 子进程proc
-            current->cptr = proc->optr;  // older sibling
-    
-            proc->yptr = NULL;
-            if ((proc->optr = initproc->cptr) != NULL) {  // 插入链表，是init的最young的
-                initproc->cptr->yptr = proc;
-            }
-            proc->parent = initproc;
-            initproc->cptr = proc;
-
-            // 如果子进程处于 PROC_ZOMBIE 状态，唤醒 init 进程来回收
-            if (proc->state == PROC_ZOMBIE) {
-                if (initproc->wait_state == WT_CHILD) {
-                    wakeup_proc(initproc);
-                }
-            }
-        }
-    }
-    local_intr_restore(intr_flag);
-    schedule();     // 这个进程被杀了，让其他进程跑，因为
-    panic("do_exit will not return!! %d.\n", current->pid);
-}
-```   
+`do_exit`函数首先检查当前进程的内存管理结构`mm`，如果不为`NULL`，表示其为一个用户进程，需要将页表设置为内核空间页表，表示在内核空间工作。  
+然后判断`mm`的引用计数，若当前用户空间只有该进程使用，则调用`exit_mmap`释放`mm`中的空间；然后调用`put_pgdir`释放页目录表，最后调用`mm_destroy`释放`mm`。  
+接下来将当前进程的状态设置为`PROC_ZOMBIE`，表示该进程已经退出。  
+接着遍历当前进程的子进程，插入到`initproc`的子进程链表中，如果子进程已经退出，则唤醒`initproc`来回收其资源。  
+最后调用`schedule`函数，调度其他进程执行。
 
 
 ### 函数执行流程
@@ -550,10 +429,10 @@ syscall(void) {
 
 ### 用户程序是何时被预先加载到内存中的？与常用操作系统加载的区别，原因是什么？
 
+本次实验把用户准备的二进制程序编译到了内核镜像中。  
+由于在本次实验中文件系统还没实现，于是想要执行一个编译好的二进制程序，就要将二进制程序和内核一同编译，把可执行程序链接到内核中，也就是在内存中创建了一个大空间，将这个文件以二进制形式保存在了这一片内存区域中。  
 
-本次实验把用户准备的二进制程序编译到了内核镜像中，由于在本次实验中文件系统还没实现，于是想要执行一个编译好的二进制程序，就要将二进制程序和内核一同编译，把可执行程序链接到内核中，也就是在内存中创建了一个大空间，于是将这个文件以二进制形式保存在了这一片内存区域中。  
-
-常用操作系统是通过以下步骤来加载用户程序的：
+常用操作系统是通过以下步骤来加载用户程序的：  
 1. 操作系统根据路径找到对应的程序，检测程序的头部，找到代码段和数据段的位置，以及程序的入口点。
 2. 操作系统为程序分配内存空间，将程序的各个段加载到内存中，并进行地址重定位，使得程序能够正确地访问自己的数据和代码。
 3. 操作系统将执行权移交给程序的入口点，开始执行用户程序。

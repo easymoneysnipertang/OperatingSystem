@@ -290,6 +290,7 @@ trap(struct trapframe *tf) {
         current->tf = otf;
         if (!in_kernel) {
             if (current->flags & PF_EXITING) {
+                // 根据do_kill设置的PF_EXITING标志，决定是否退出
                 do_exit(-E_KILLED);
             }
             if (current->need_resched) {

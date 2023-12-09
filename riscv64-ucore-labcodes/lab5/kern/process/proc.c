@@ -718,7 +718,7 @@ do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
     if (mm != NULL) {  // 用户进程
         cputs("mm != NULL");
         // 设置页表为内核空间页表，接下来在内核空间执行
-        lcr3(boot_cr3);     // 这里是启动一个进程为什么要回收内核的页表项？
+        lcr3(boot_cr3);     // 这里是启动一个进程为什么要回收内核的页表项->覆盖
         // 判断 mm 的引用计数
         if (mm_count_dec(mm) == 0) {
             // 回收当前进程的内存空间？
