@@ -10,6 +10,8 @@
   - [请给出 ucore 中一个用户态进程的执行状态生命周期图。](#请给出-ucore-中一个用户态进程的执行状态生命周期图)
 - [扩展练习 Challenge](#扩展练习-challenge)
   - [实现 Copy on Write （COW）机制](#实现-copy-on-write-cow机制)
+    - [代码实现](#代码实现)
+    - [测试结果](#测试结果)
   - [用户程序是何时被预先加载到内存中的？与常用操作系统加载的区别，原因是什么？](#用户程序是何时被预先加载到内存中的与常用操作系统加载的区别原因是什么)
 - [知识点分析](#知识点分析)
   - [重要知识点](#重要知识点)
@@ -492,6 +494,59 @@ syscall(void) {
 ## 扩展练习 Challenge
 
 ### 实现 Copy on Write （COW）机制
+#### 代码实现
+首先，在fork时将父进程的空间设为只读，再将子进程的虚拟地址空间映射到父进程的物理页，二者共享内存空间。  
+代码如下，根据`share`的值来判断是否需要共享内存空间。如果需要，则通过`page_insert`将子进程的虚拟地址空间映射到父进程的物理页，否则，将父进程的内存空间复制给子进程。  
+```C
+    if(share){
+        // COW，共享，初始两边都设置为只读
+        page_insert(from, page, start, perm & (~PTE_W));
+        ret = page_insert(to, page, start, perm & (~PTE_W));
+    }
+    else{
+        struct Page *npage = alloc_page();
+        assert(npage != NULL);
+        void* src_kvaddr = page2kva(page);
+        void* dst_kvaddr = page2kva(npage);
+        memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+        ret = page_insert(to, npage, start, perm);
+    }
+```
+
+接着就是修改`do_pgfault`函数，当发生缺页中断时，判断是否是写一个只读页面。  
+如果是，则需要将页面复制一份，然后修改子进程的页表，建立新的映射关系，使得子进程的内存空间与父进程的内存空间分离。  
+另外还需查看原来共享的物理页是否只有一个进程在使用，如果是，需恢复原来的读写权限。  
+```C
+    // Copy on Write，发生写不可写页面错误时，tf->cause == 0xf
+    else if((*ptep & PTE_V) && (error_code == 0xf)) {
+        struct Page *page = pte2page(*ptep);
+        if(page_ref(page) == 1) {
+            // 该页面只有一个引用，直接修改权限
+            page_insert(mm->pgdir, page, addr, perm);
+        }
+        else {
+            // 该页面有多个引用，需要复制页面
+            struct Page *npage = alloc_page();
+            assert(npage != NULL);
+            memcpy(page2kva(npage), page2kva(page), PGSIZE);
+            if(page_insert(mm->pgdir, npage, addr, perm) != 0) {
+                cprintf("page_insert in do_pgfault failed\n");
+                goto failed;
+            }
+        }
+    }
+```
+
+#### 测试结果
+由于时间所限，没有设置专门的测试用例以及模拟指导书中提出的错误场景。  
+只是设置为Copy On Write机制后，运行了`make grade`，测试结果如下：
+![cow](src/cow_check.png)  
+
+可以看到，能够通过所有测试用例。  
+查看exit.c的输出日志，可以看到，当进程修改共享页面时，触发了缺页中断，进行了`Copy On Write`操作复制了页面，用户程序正常执行。
+
+![log](src/exit_log.png)
+
 
 ### 用户程序是何时被预先加载到内存中的？与常用操作系统加载的区别，原因是什么？
 
