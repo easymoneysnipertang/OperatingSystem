@@ -357,6 +357,7 @@ sfs_bmap_load_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, 
     int ret;
     uint32_t ino;
     bool create = (index == din->blocks);
+    // 根据第index个索引指向的block索引，取出相应的单元
     if ((ret = sfs_bmap_get_nolock(sfs, sin, index, create, &ino)) != 0) {
         return ret;
     }
@@ -551,6 +552,7 @@ sfs_close(struct inode *node) {
  */
 static int
 sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset, size_t *alenp, bool write) {
+    // 计算辅助变量
     struct sfs_disk_inode *din = sin->din;
     assert(din->type != SFS_TYPE_DIR);
     off_t endpos = offset + *alenp, blkoff;
@@ -615,15 +617,19 @@ out:
  * sfs_io - Rd/Wr file. the wrapper of sfs_io_nolock
             with lock protect
  */
+// node是对应文件的inode，iob是缓存，write是读写标志
 static inline int
 sfs_io(struct inode *node, struct iobuf *iob, bool write) {
+    // 首先找到inode对应的sfs和sin
     struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);
     struct sfs_inode *sin = vop_info(node, sfs_inode);
     int ret;
     lock_sin(sin);
     {
         size_t alen = iob->io_resid;
+        // 调用sfs_io_nolock进行读写
         ret = sfs_io_nolock(sfs, sin, iob->io_base, iob->io_offset, &alen, write);
+        // 调整iobuf指针
         if (alen != 0) {
             iobuf_skip(iob, alen);
         }
@@ -939,8 +945,12 @@ out_unlock:
  *              DIR, and hand back the inode for the file it
  *              refers to.
  */
+// node是根目录“/”所对应的 inode 节点
+// path是文件sfs_filetest1 的绝对路径/sfs_filetest1
+// node_store是经过查找获得的 sfs_filetest1 所对应的 inode 节点
 static int
 sfs_lookup(struct inode *node, char *path, struct inode **node_store) {
+    // 以“/”为分割符，从左至右逐一分解path获得各个子目录和最终文件对应的inode节点
     struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);
     assert(*path != '\0' && *path != '/');
     vop_ref_inc(node);

@@ -826,6 +826,7 @@ user_main(void *arg) {
 static int
 init_main(void *arg) {
     int ret;
+    // 根目录赋值
     if ((ret = vfs_set_bootfs("disk0:")) != 0) {
         panic("set boot fs failed: %e.\n", ret);
     }
