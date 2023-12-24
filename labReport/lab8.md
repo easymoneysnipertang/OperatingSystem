@@ -81,15 +81,18 @@ process1 -[write]-> pipe(in kernel) -[read]-> process2
 当两个进程都终结的时候，管道也自动消失。
 
 实现上，可以借助文件系统的file结构和VFS的索引节点inode。  
-将两个file结构指向同一个临时的VFS索引节点，而这个VFS索引节点指向一个物理数据页。
+将两个file结构指向同一个**临时的VFS索引节点**，而这个VFS索引节点指向一个物理数据页。
 ```
-file1.inode   ----> inode <----   file2.inode
-inode.in_ops=write    ↓    inode.in_ops=read
+file1.inode   ---> inode <---   file2.inode
+       write         ↓         read
                   data page
 ```
 
 当进程向管道写入时，利用标准库函数`write()`，系统根据库函数传递的文件描述符找到文件的file结构。  
-file结构指定
+file结构拿到特定函数地址进行写入，写入时锁定内存，接着将进程地址空间的数据复制到内存。  
+若不能获取到锁或不能写入，则休眠，进入等待队列。  
+当有空间可以写入或内存解锁时，读取进程唤醒写入进程。  
+写入进程收到信号，写入数据后，唤醒休眠的读取进程进行读取。
 
 ## 扩展练习Challenge2：完成基于“UNIX 的软连接和硬连接机制”的设计方案
 > **UNIX硬链接**  
