@@ -26,6 +26,7 @@ struct iobuf;
  * vfs_open() and vfs_close(). Code above the VFS layer should not
  * need to worry about it.
  */
+// 封装不同文件系统的特定索引节点信息
 struct inode {
     union {
         struct device __device_info;

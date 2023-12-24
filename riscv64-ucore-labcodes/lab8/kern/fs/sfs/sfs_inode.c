@@ -989,7 +989,7 @@ out_unlock:
  *              refers to.
  */
 // node是根目录“/”所对应的 inode 节点
-// path是文件sfs_filetest1 的绝对路径/sfs_filetest1
+// path是文件sfs_filetest1 的绝对路径
 // node_store是经过查找获得的 sfs_filetest1 所对应的 inode 节点
 static int
 sfs_lookup(struct inode *node, char *path, struct inode **node_store) {

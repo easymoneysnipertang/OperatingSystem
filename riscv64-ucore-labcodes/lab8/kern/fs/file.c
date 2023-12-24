@@ -188,7 +188,7 @@ file_open(char *path, uint32_t open_flags) {
         // 如果是以O_APPEND打开文件，那么文件的读写位置为文件尾
         file->pos = stat->st_size;
     }
-    file->node = node;
+    file->node = node;  // current->fs_struct->ﬁlemap[fd]->node = node;
     file->readable = readable;
     file->writable = writable;
     fd_array_open(file);  // 设置file descriptor的状态为FD_OPENED
