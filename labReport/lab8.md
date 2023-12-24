@@ -7,6 +7,66 @@
 
 
 ## 练习1: 完成读文件操作的实现（需要编码）
+打开文件的流程如下：
+1. 用户进程要打开打开文件首先需要通过`syscall`进入内核态，执行`sysfile_open()`函数，将位于用户空间的路径字符串`path`拷贝到内核空间，然后调用`file_open()`函数，`file_open`通过使用VFS的接口`vfs_open`进入到文件系统抽象层。
+2. 在文件系统抽象层中，首先分配一个空闲的file数据结构，然后通过`vfs_lookup`找到path对应文件的VFS索引节点。
+3. `vfs_lookup`会调用用vop_lookup函数进入到SFS文件系统，将`path`路径从左至右逐一分解`path`获得各个子目录和最终文件的inode节点。  
+
+读文件的过程也类似，首先通过`syscall`进入内核态，执行`sys_read()`函数，将位于用户空间的文件描述符`fd`和缓冲区`base`拷贝到内核空间，然后调用`sysfile_read()`函数，进入到文件系统抽象层。  
+
+在`sysfile_read()`函数中，每次读取`buffer`大小，循环的读取文件，调用`file_read()`函数将文件内容读取到`buffer`中，
+`file_read()`函数首先通过`fd2file`找到对应的`file`结构，并检查是否可读，将这个文件的计数加1，然后通过`vop_read`将文件内容读到缓存中。 
+
+`vop_read`实际上是对`sfs_read`的封装，`sfs_read`会调用`sfs_io`，首先找到`inode`对应的`sfs`和`sin`，然后调用`sfs_io_nolock`进行读取文件的操作。  
+
+`sfs_io_nolock`函数的填写如下:
+```c
+    if ((blkoff = offset % SFS_BLKSIZE) != 0) {
+        size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
+        //找到磁盘块号
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        //进行相应的读写操作
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, blkoff)) != 0) {
+            goto out;
+        }
+        //更新后续读写需要的参数
+        alen += size;
+        buf += size;
+        if (nblks == 0) {
+            goto out;
+        }
+        blkno++;
+        nblks--;
+    }
+
+    if (nblks > 0) {
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        if ((ret = sfs_block_op(sfs, buf, ino, nblks)) != 0) {
+            goto out;
+        }
+        alen += nblks * SFS_BLKSIZE;
+        buf += nblks * SFS_BLKSIZE;
+        blkno += nblks;
+        nblks -= nblks;
+    }
+
+    //处理末尾
+    if ((size = endpos % SFS_BLKSIZE) != 0) {
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, 0)) != 0) {
+            goto out;
+        }
+        alen += size;
+    }
+```
+在上述过程中，首先检查读写位置是否与`block`大小对齐，如果不对齐，需要先读写开头一部分，然后再读写中间部分，最后处理末尾剩余部分文件内容。每次读写时，首先通过`bmap_load_nolock`找到对应的磁盘块号，然后中间部分通过`sfs_block_op`直接进行多个块的读写操作，开头与末尾与`block`大小未对齐部分通过`sfs_buf_op`在块内进行读写。
+
 
 ## 练习2: 完成基于文件系统的执行程序机制的实现（需要编码）
 
