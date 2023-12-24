@@ -143,6 +143,7 @@ alloc_proc(void) {
      * below fields(add in LAB6) in proc_struct need to be initialized
      *       struct files_struct * filesp;                file struct point        
      */
+        //初始化filesp
         proc->filesp = NULL;
     }
     return proc;
@@ -601,7 +602,6 @@ load_icode_read(int fd, void *buf, size_t len, off_t offset) {
 }
 
 // load_icode -  called by sys_exec-->do_execve
-
 static int
 load_icode(int fd, int argc, char **kargv) {
     /* LAB8:EXERCISE2 YOUR CODE  HINT:how to load the file with handler fd  in to process's memory? how to setup argc/argv?
@@ -613,8 +613,8 @@ load_icode(int fd, int argc, char **kargv) {
      *  pgdir_alloc_page - allocate new memory for  TEXT/DATA/BSS/stack parts
      *  lcr3             - update Page Directory Addr Register -- CR3
      */
-  //You can Follow the code form LAB5 which you have completed  to complete 
- /* (1) create a new mm for current process 
+   //You can Follow the code form LAB5 which you have completed  to complete 
+    /* (1) create a new mm for current process 
      * (2) create a new PDT, and mm->pgdir= kernel virtual addr of PDT
      * (3) copy TEXT/DATA/BSS parts in binary to memory space of process
      *    (3.1) read raw data content in file and resolve elfhdr
@@ -629,22 +629,27 @@ load_icode(int fd, int argc, char **kargv) {
      * (7) setup trapframe for user environment
      * (8) if up steps failed, you should cleanup the env.
      */
-        assert(argc >= 0 && argc <= EXEC_MAX_ARG_NUM);
+    
+    assert(argc >= 0 && argc <= EXEC_MAX_ARG_NUM);
+    
+    //(1) create a new mm for current process 
     if (current->mm != NULL) {
         panic("load_icode: current->mm must be empty.\n");
     }
-
     int ret = -E_NO_MEM;
     struct mm_struct *mm;
     if ((mm = mm_create()) == NULL) {
         goto bad_mm;
     }
+
+    //(2) create a new PDT, and mm->pgdir= kernel virtual addr of PDT
     if (setup_pgdir(mm) != 0) {
         goto bad_pgdir_cleanup_mm;
     }
 
     struct Page *page;
-
+    
+    //(3) copy TEXT/DATA/BSS parts in binary to memory space of process
     struct elfhdr __elf, *elf = &__elf;
     if ((ret = load_icode_read(fd, elf, sizeof(struct elfhdr), 0)) != 0) {
         goto bad_elf_cleanup_pgdir;
@@ -735,6 +740,8 @@ load_icode(int fd, int argc, char **kargv) {
     }
     sysfile_close(fd);
 
+    // 设置用户栈，建立地址映射关系
+    //(4) call mm_map to setup user stack, and put parameters into user stack
     vm_flags = VM_READ | VM_WRITE | VM_STACK;
     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
         goto bad_cleanup_mmap;
@@ -743,30 +750,40 @@ load_icode(int fd, int argc, char **kargv) {
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-2*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-3*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
-    
+        
+
     mm_count_inc(mm);
     current->mm = mm;
     current->cr3 = PADDR(mm->pgdir);
+    //(5) setup current process's mm, cr3, reset pgidr (using lcr3 MARCO)
     lcr3(PADDR(mm->pgdir));
 
-    //setup argc, argv
+    //(6) setup uargc and uargv in user stacks
     uint32_t argv_size=0, i;
+    //计算参数总长度
     for (i = 0; i < argc; i ++) {
         argv_size += strnlen(kargv[i],EXEC_MAX_ARG_LEN + 1)+1;
     }
 
+    
     uintptr_t stacktop = USTACKTOP - (argv_size/sizeof(long)+1)*sizeof(long);
     char** uargv=(char **)(stacktop  - argc * sizeof(char *));
     
     argv_size = 0;
+    //存储参数
     for (i = 0; i < argc; i ++) {
-        uargv[i] = strcpy((char *)(stacktop + argv_size ), kargv[i]);
+        //uargv[i]保存了kargv[i]在栈中的起始位置
+        uargv[i] = strcpy((char *)(stacktop + argv_size), kargv[i]);
         argv_size +=  strnlen(kargv[i],EXEC_MAX_ARG_LEN + 1)+1;
     }
     
+    //由于栈地址从高向低增长，所以第一个参数的地址即为栈顶地址，同时压入一个int用于保存argc
     stacktop = (uintptr_t)uargv - sizeof(int);
+    //在栈顶存储参数数量
     *(int *)stacktop = argc;
     
+    //(7) setup trapframe for user environment
+     
     struct trapframe *tf = current->tf;
     // Keep sstatus
     uintptr_t sstatus = tf->status;
@@ -774,7 +791,10 @@ load_icode(int fd, int argc, char **kargv) {
     tf->gpr.sp = stacktop;
     tf->epc = elf->e_entry;
     tf->status = sstatus & ~(SSTATUS_SPP | SSTATUS_SPIE);
+    
     ret = 0;
+
+    //(8) if up steps failed, you should cleanup the env.
 out:
     return ret;
 bad_cleanup_mmap:
