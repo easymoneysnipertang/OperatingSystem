@@ -172,7 +172,7 @@ file_open(char *path, uint32_t open_flags) {
         return ret;
     }
     struct inode *node;
-    // 调用vfs_open打开文件，进入到文件系统抽象层的处理流程
+    // 调用vfs_open打开文件，得到path对应的VFS inode
     if ((ret = vfs_open(path, open_flags, &node)) != 0) {
         fd_array_free(file);  // 打开文件失败，释放file descriptor
         return ret;

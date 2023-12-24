@@ -592,9 +592,11 @@ do_exit(int error_code) {
 static int
 load_icode_read(int fd, void *buf, size_t len, off_t offset) {
     int ret;
+    // 移动文件指针到offset处
     if ((ret = sysfile_seek(fd, offset, LSEEK_SET)) != 0) {
         return ret;
     }
+    // 读取len个字节到buf中
     if ((ret = sysfile_read(fd, buf, len)) != len) {
         return (ret < 0) ? ret : -1;
     }

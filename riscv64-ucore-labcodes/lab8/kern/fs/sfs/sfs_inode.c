@@ -506,7 +506,7 @@ sfs_lookup_once(struct sfs_fs *sfs, struct sfs_inode *sin, const char *name, str
     }
     unlock_sin(sin);
     if (ret == 0) {
-		// load the content of inode with the the NO. of disk block
+		// load the content of inode with the the NO. of disk block !
         ret = sfs_load_inode(sfs, node_store, ino);
     }
     return ret;
@@ -560,7 +560,6 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     *alenp = 0;
 	
     // calculate the Rd/Wr end position
-    
     if (offset < 0 || offset >= SFS_MAX_FILE_SIZE || offset > endpos) {
         return -E_INVAL;
     }
@@ -569,18 +568,17 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     if (offset == endpos) {
         return 0;
     }
-
     if (endpos > SFS_MAX_FILE_SIZE) {
         endpos = SFS_MAX_FILE_SIZE;
     }
 
-    //非写操作
+    // 非写操作
     if (!write) {
-        //已经读到末尾
+        // 已经读到末尾
         if (offset >= din->size) {
             return 0;
         }
-        //保证读取范围不会超过文件末尾
+        // 保证读取范围不会超过文件末尾
         if (endpos > din->size) {
             endpos = din->size;
         }
@@ -588,8 +586,7 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 
     int (*sfs_buf_op)(struct sfs_fs *sfs, void *buf, size_t len, uint32_t blkno, off_t offset);
     int (*sfs_block_op)(struct sfs_fs *sfs, void *buf, uint32_t blkno, uint32_t nblks);
-    
-    //根据读写使用不同函数
+    // 根据读写使用不同函数
     if (write) {
         sfs_buf_op = sfs_wbuf, sfs_block_op = sfs_wblock;
     }
@@ -600,8 +597,7 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     int ret = 0;
     size_t size, alen = 0;
     uint32_t ino;
-    
-    //开始块
+    // 开始块
     uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block
     uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
 
@@ -615,30 +611,30 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
      * (3) If end position isn't aligned with the last block, Rd/Wr some content from begin to the (endpos % SFS_BLKSIZE) of the last block
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
-    //处理头，第一个块未对齐
+    // 先处理起始的没有对齐到块的部分
     if ((blkoff = offset % SFS_BLKSIZE) != 0) {
         size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
-        //找到磁盘块号
+        // 得到blkno对应的inode编号
         if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
             goto out;
         }
-        //进行相应的读写操作
+        // 进行相应的读写操作
         if ((ret = sfs_buf_op(sfs, buf, size, ino, blkoff)) != 0) {
             goto out;
         }
 
-        //更新后续读写需要的参数
+        // 更新后续读写需要的参数
         alen += size;
         buf += size;
 
         if (nblks == 0) {
             goto out;
         }
-
         blkno++;
         nblks--;
     }
 
+    // 以块为单位循环处理中间的部分
     if (nblks > 0) {
         if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
             goto out;
