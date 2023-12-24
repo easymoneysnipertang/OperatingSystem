@@ -765,7 +765,6 @@ load_icode(int fd, int argc, char **kargv) {
         argv_size += strnlen(kargv[i],EXEC_MAX_ARG_LEN + 1)+1;
     }
 
-    
     uintptr_t stacktop = USTACKTOP - (argv_size/sizeof(long)+1)*sizeof(long);
     char** uargv=(char **)(stacktop  - argc * sizeof(char *));
     

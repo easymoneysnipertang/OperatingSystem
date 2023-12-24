@@ -553,7 +553,6 @@ sfs_close(struct inode *node) {
 static int
 sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset, size_t *alenp, bool write) {
     // 计算辅助变量
-    
     struct sfs_disk_inode *din = sin->din;
     assert(din->type != SFS_TYPE_DIR);
 
@@ -570,7 +569,6 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     if (offset == endpos) {
         return 0;
     }
-
 
     if (endpos > SFS_MAX_FILE_SIZE) {
         endpos = SFS_MAX_FILE_SIZE;
@@ -605,7 +603,6 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     
     //开始块
     uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block
-    
     uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
 
   //LAB8:EXERCISE1 YOUR CODE HINT: call sfs_bmap_load_nolock, sfs_rbuf, sfs_rblock,etc. read different kind of blocks in file
@@ -666,8 +663,6 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
         }
         alen += size;
     }
-
-    
 
 out:
     *alenp = alen;
