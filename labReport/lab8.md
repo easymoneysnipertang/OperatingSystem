@@ -10,7 +10,7 @@
 打开文件的流程如下：
 1. 用户进程要打开打开文件首先需要通过`syscall`进入内核态，执行`sysfile_open()`函数，将位于用户空间的路径字符串`path`拷贝到内核空间，然后调用`file_open()`函数，`file_open`通过使用VFS的接口`vfs_open`进入到文件系统抽象层。
 2. 在文件系统抽象层中，首先分配一个空闲的file数据结构，然后通过`vfs_lookup`找到path对应文件的VFS索引节点。
-3. `vfs_lookup`会调用用vop_lookup函数进入到SFS文件系统，将`path`路径从左至右逐一分解`path`获得各个子目录和最终文件的inode节点。  
+3. `vfs_lookup`会调用用vop_lookup函数进入到SFS文件系统，将`path`路径从左至右逐一分解`path`获得各个子目录和最终文件的inode节点(本次实验中仅在根目录下查找)。  
 
 读文件的过程也类似，首先通过`syscall`进入内核态，执行`sys_read()`函数，将位于用户空间的文件描述符`fd`和缓冲区`base`拷贝到内核空间，然后调用`sysfile_read()`函数，进入到文件系统抽象层。  
 
