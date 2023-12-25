@@ -70,6 +70,83 @@
 
 ## 练习2: 完成基于文件系统的执行程序机制的实现（需要编码）
 
+在 Lab 5 的基础上进行修改，读 elf 文件变成从磁盘上读，而不是直接在内存中读。
+
+1. `alloc_proc`函数
+
+在 proc.c 中，首先我们需要先初始化 fs 中的进程控制结构，即在 alloc_proc 函数中我们需要做—下修改，加上—句 proc->ﬁlesp = NULL; 从而完成初始化。一个文件需要在 VFS 中变为一个进程才能被执行。
+
+```c
+// kern/process/proc.c中
+// 初始化filesp
+proc->filesp = NULL;
+```
+
+2. `load_icode`函数
+
+首先，已经实现了文件系统，所以将原来lab5中的从内存中读取用户elf文件头以及程序文件头的方式改为通过文件系统来完成：
+
+```c
+// ... some codes here ...
+//(3) copy TEXT/DATA/BSS parts in binary to memory space of process
+struct elfhdr __elf, *elf = &__elf;
+if ((ret = load_icode_read(fd, elf, sizeof(struct elfhdr), 0)) != 0) {
+    goto bad_elf_cleanup_pgdir;
+}
+
+if (elf->e_magic != ELF_MAGIC) {
+    ret = -E_INVAL_ELF;
+    goto bad_elf_cleanup_pgdir;
+}
+
+struct proghdr __ph, *ph = &__ph;
+uint32_t vm_flags, perm, phnum;
+for (phnum = 0; phnum < elf->e_phnum; phnum ++) {
+    off_t phoff = elf->e_phoff + sizeof(struct proghdr) * phnum;
+    if ((ret = load_icode_read(fd, ph, sizeof(struct proghdr), phoff)) != 0) {
+// ... some codes here ...
+```
+
+上面的代码使用`load_icode_read`来完成对elfhdr和proghdr的读取工作，而`load_icode_read`本质上是调用了文件系统的接口。后续的代码中还有对于这个函数的调用，这里不再赘述。  
+
+另外，由于还需要对用户栈中的参数argc和argv进行初始化，所以还需要计算传入参数的长度，将这两个参数压入用户栈。
+
+```c
+//(6) setup uargc and uargv in user stacks
+uint32_t argv_size=0, i;
+//计算参数总长度
+for (i = 0; i < argc; i ++) {
+    argv_size += strnlen(kargv[i],EXEC_MAX_ARG_LEN + 1)+1;
+}
+// 为agrv指向的字符串分配空间，对齐
+uintptr_t stacktop = USTACKTOP - (argv_size/sizeof(long)+1)*sizeof(long);
+char** uargv=(char **)(stacktop  - argc * sizeof(char *));
+
+argv_size = 0;
+//存储参数
+for (i = 0; i < argc; i ++) {
+    //uargv[i]保存了kargv[i]在栈中的起始位置
+    uargv[i] = strcpy((char *)(stacktop + argv_size), kargv[i]);
+    argv_size +=  strnlen(kargv[i],EXEC_MAX_ARG_LEN + 1)+1;
+}
+//由于栈地址从高向低增长，所以第一个参数的地址即为栈顶地址，同时压入一个int用于保存argc
+stacktop = (uintptr_t)uargv - sizeof(int);
+//在栈顶存储参数数量
+*(int *)stacktop = argc;
+```
+
+这个过程通过四步完成：
+
+- 首先通过遍历计算出argv指向的字符串的总长度，然后通过将栈顶指针减去这个长度并对齐，**为这些字符串分配空间。**
+
+- 其次将栈顶减去argc * sizeof(char*)**为agrv指针数组本身分配空间**
+- 然后利用循环把uargv中的字符串参数拷贝到对应的位置
+- 最后**为argc参数分配空间**，给argc赋值即可
+
+
+
+通过这两步即可完成基于文件系统的执行，make qemu后可以执行相应的用户程序。
+
 ## 扩展练习Challenge1：完成基于“UNIX 的 PIPE 机制”的设计方案
 管道是由内核管理的一个缓冲区：管道的一端连接一个进程的输出，这个进程会向管道中放入信息。管道的另一端连接一个进程的输入，这个进程取出被放入管道的信息。  
 ```
